@@ -3,7 +3,7 @@
     "defaults": {
       "workspace": "/opt/render/project/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model": "anthropic/claude-3-5-sonnet-20240620",
+      "model": "llama-3.1-8b-instant",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -18,9 +18,9 @@
     }
   },
   "providers": {
-    "openrouter": {
-      "api_key": "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",
-      "api_base": "https://openrouter.ai/api/v1"
+    "groq": {
+      "api_key": "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",
+      "api_base": "https://api.groq.com/openai/v1"
     }
   },
   "gateway": {
