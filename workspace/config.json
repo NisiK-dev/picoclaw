@@ -12,7 +12,7 @@
   "channels": {
     "telegram": {
       "enabled": true,
-      "token": "SEU_TOKEN_AQUI",
+      "token": "8166853397:AAE5-8nUz00qv-vemFjYFnUIxUm4yx9Z8bw",
       "proxy": "",
       "allow_from": []
     },
