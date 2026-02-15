@@ -209,7 +209,7 @@ func DefaultConfig() *Config {
 				Workspace:           "~/.picoclaw/workspace",
 				RestrictToWorkspace: true,
 				Provider:            "",
-				Model:               "glm-4.7",
+				Model:               "anthropic/claude-3-5-sonnet-20240620",
 				MaxTokens:           8192,
 				Temperature:         0.7,
 				MaxToolIterations:   20,
