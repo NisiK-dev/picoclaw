@@ -148,7 +148,7 @@ type LINEConfig struct {
 
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled" env:"PICOCLAW_HEARTBEAT_ENABLED"`
-	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
+	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"`
 }
 
 type DevicesConfig struct {
@@ -170,7 +170,7 @@ type ProvidersConfig struct {
 	DeepSeek     ProviderConfig `json:"deepseek"`
 }
 
-// ProviderConfig - REMOVIDO o env tag com {{.Name}} que causava o bug
+// ProviderConfig - Removido o env tag com {{.Name}}
 type ProviderConfig struct {
 	APIKey     string `json:"api_key"`
 	APIBase    string `json:"api_base"`
@@ -305,7 +305,7 @@ func DefaultConfig() *Config {
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
-			Interval: 30, // default 30 minutes
+			Interval: 30,
 		},
 		Devices: DevicesConfig{
 			Enabled:    false,
@@ -317,79 +317,24 @@ func DefaultConfig() *Config {
 func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
-	fmt.Printf("Loading config from: %s\n", path)
-	
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Printf("Config file not found, using defaults\n")
 			return cfg, nil
 		}
 		return nil, err
 	}
 
-	fmt.Printf("Config file found, size: %d bytes\n", len(data))
-	fmt.Printf("Config content: %s\n", string(data))
-
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("Provider after JSON parse: %s\n", cfg.Agents.Defaults.Provider)
-	fmt.Printf("Model after JSON parse: %s\n", cfg.Agents.Defaults.Model)
-	fmt.Printf("Groq API Key after JSON parse: %s\n", cfg.Providers.Groq.APIKey)
-
+	// Parse env vars after JSON to allow override
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("Provider after env parse: %s\n", cfg.Agents.Defaults.Provider)
-	fmt.Printf("Model after env parse: %s\n", cfg.Agents.Defaults.Model)
-
 	return cfg, nil
-}
-
-	// DEPOIS: Faz parse das env vars apenas se não estiverem vazias no JSON
-	// Isso permite que o JSON sobrescreva as env vars
-	envCfg := DefaultConfig()
-	if err := env.Parse(envCfg); err == nil {
-		// Merge: env vars só sobrescrevem se o JSON não tiver definido
-		mergeConfig(cfg, envCfg)
-	}
-
-	return cfg, nil
-}
-
-// mergeConfig mesma configuração do env apenas onde o JSON está vazio
-func mergeConfig(cfg, envCfg *Config) {
-	// Agents
-	if cfg.Agents.Defaults.Workspace == "" {
-		cfg.Agents.Defaults.Workspace = envCfg.Agents.Defaults.Workspace
-	}
-	if cfg.Agents.Defaults.Provider == "" {
-		cfg.Agents.Defaults.Provider = envCfg.Agents.Defaults.Provider
-	}
-	if cfg.Agents.Defaults.Model == "" {
-		cfg.Agents.Defaults.Model = envCfg.Agents.Defaults.Model
-	}
-	if cfg.Agents.Defaults.MaxTokens == 0 {
-		cfg.Agents.Defaults.MaxTokens = envCfg.Agents.Defaults.MaxTokens
-	}
-	
-	// Providers - só sobrescreve se estiver vazio no JSON
-	if cfg.Providers.Groq.APIKey == "" {
-		cfg.Providers.Groq = envCfg.Providers.Groq
-	}
-	if cfg.Providers.Anthropic.APIKey == "" {
-		cfg.Providers.Anthropic = envCfg.Providers.Anthropic
-	}
-	if cfg.Providers.OpenAI.APIKey == "" {
-		cfg.Providers.OpenAI = envCfg.Providers.OpenAI
-	}
-	if cfg.Providers.OpenRouter.APIKey == "" {
-		cfg.Providers.OpenRouter = envCfg.Providers.OpenRouter
-	}
-	// ... e assim por diante para outros providers
 }
 
 func SaveConfig(path string, cfg *Config) error {
