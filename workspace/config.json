@@ -12,7 +12,7 @@
   "channels": {
     "telegram": {
       "enabled": true,
-      "token": "${PICOCLAW_CHANNELS_TELEGRAM_TOKEN}",
+      "token": "SEU_TOKEN_AQUI",
       "proxy": "",
       "allow_from": []
     },
@@ -64,7 +64,7 @@
   },
   "providers": {
     "anthropic": {
-      "api_key": "${PICOCLAW_PROVIDERS_ANTHROPIC_API_KEY}",
+      "api_key": "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",
       "api_base": "https://api.anthropic.com"
     }
   },
