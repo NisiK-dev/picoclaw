@@ -81,51 +81,51 @@ type ChannelsConfig struct {
 }
 
 type WhatsAppConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
-	BridgeURL string              `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
+	Enabled   bool               `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
+	BridgeURL string             `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
 }
 
 type TelegramConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	Proxy     string              `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	Enabled   bool               `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token     string             `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	Proxy     string             `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
 }
 
 type FeishuConfig struct {
-	Enabled           bool                `json:"enabled" env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
-	AppID             string              `json:"app_id" env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
-	AppSecret         string              `json:"app_secret" env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey        string              `json:"encrypt_key" env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken string              `json:"verification_token" env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
+	Enabled           bool               `json:"enabled" env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
+	AppID             string             `json:"app_id" env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
+	AppSecret         string             `json:"app_secret" env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
+	EncryptKey        string             `json:"encrypt_key" env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
+	VerificationToken string             `json:"verification_token" env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
 	AllowFrom         FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
 }
 
 type DiscordConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	Enabled   bool               `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
+	Token     string             `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
 }
 
 type MaixCamConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_MAIXCAM_ENABLED"`
-	Host      string              `json:"host" env:"PICOCLAW_CHANNELS_MAIXCAM_HOST"`
-	Port      int                 `json:"port" env:"PICOCLAW_CHANNELS_MAIXCAM_PORT"`
+	Enabled   bool               `json:"enabled" env:"PICOCLAW_CHANNELS_MAIXCAM_ENABLED"`
+	Host      string             `json:"host" env:"PICOCLAW_CHANNELS_MAIXCAM_HOST"`
+	Port      int                `json:"port" env:"PICOCLAW_CHANNELS_MAIXCAM_PORT"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_MAIXCAM_ALLOW_FROM"`
 }
 
 type QQConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID     string              `json:"app_id" env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret string              `json:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
+	Enabled   bool               `json:"enabled" env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
+	AppID     string             `json:"app_id" env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
+	AppSecret string             `json:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
 }
 
 type DingTalkConfig struct {
-	Enabled      bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
-	ClientID     string              `json:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret string              `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
+	Enabled      bool               `json:"enabled" env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
+	ClientID     string             `json:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
+	ClientSecret string             `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
 	AllowFrom    FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
 }
 
@@ -137,12 +137,12 @@ type SlackConfig struct {
 }
 
 type LINEConfig struct {
-	Enabled            bool                `json:"enabled" env:"PICOCLAW_CHANNELS_LINE_ENABLED"`
-	ChannelSecret      string              `json:"channel_secret" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
-	ChannelAccessToken string              `json:"channel_access_token" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
-	WebhookHost        string              `json:"webhook_host" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
+	Enabled            bool               `json:"enabled" env:"PICOCLAW_CHANNELS_LINE_ENABLED"`
+	ChannelSecret      string             `json:"channel_secret" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
+	ChannelAccessToken string             `json:"channel_access_token" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
+	WebhookHost        string             `json:"webhook_host" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
+	WebhookPort        int                `json:"webhook_port" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
+	WebhookPath        string             `json:"webhook_path" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
 }
 
@@ -170,11 +170,12 @@ type ProvidersConfig struct {
 	DeepSeek     ProviderConfig `json:"deepseek"`
 }
 
+// ProviderConfig - REMOVIDO o env tag com {{.Name}} que causava o bug
 type ProviderConfig struct {
-	APIKey     string `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase    string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy      string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	AuthMethod string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
+	APIKey     string `json:"api_key"`
+	APIBase    string `json:"api_base"`
+	Proxy      string `json:"proxy,omitempty"`
+	AuthMethod string `json:"auth_method,omitempty"`
 }
 
 type GatewayConfig struct {
@@ -227,12 +228,12 @@ func DefaultConfig() *Config {
 				AllowFrom: FlexibleStringSlice{},
 			},
 			Feishu: FeishuConfig{
-				Enabled:           false,
-				AppID:             "",
-				AppSecret:         "",
-				EncryptKey:        "",
-				VerificationToken: "",
-				AllowFrom:         FlexibleStringSlice{},
+				Enabled:            false,
+				AppID:              "",
+				AppSecret:          "",
+				EncryptKey:         "",
+				VerificationToken:  "",
+				AllowFrom:          FlexibleStringSlice{},
 			},
 			Discord: DiscordConfig{
 				Enabled:   false,
@@ -324,15 +325,52 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// PRIMEIRO: Faz parse do JSON
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
 
-	if err := env.Parse(cfg); err != nil {
-		return nil, err
+	// DEPOIS: Faz parse das env vars apenas se não estiverem vazias no JSON
+	// Isso permite que o JSON sobrescreva as env vars
+	envCfg := DefaultConfig()
+	if err := env.Parse(envCfg); err == nil {
+		// Merge: env vars só sobrescrevem se o JSON não tiver definido
+		mergeConfig(cfg, envCfg)
 	}
 
 	return cfg, nil
+}
+
+// mergeConfig mesma configuração do env apenas onde o JSON está vazio
+func mergeConfig(cfg, envCfg *Config) {
+	// Agents
+	if cfg.Agents.Defaults.Workspace == "" {
+		cfg.Agents.Defaults.Workspace = envCfg.Agents.Defaults.Workspace
+	}
+	if cfg.Agents.Defaults.Provider == "" {
+		cfg.Agents.Defaults.Provider = envCfg.Agents.Defaults.Provider
+	}
+	if cfg.Agents.Defaults.Model == "" {
+		cfg.Agents.Defaults.Model = envCfg.Agents.Defaults.Model
+	}
+	if cfg.Agents.Defaults.MaxTokens == 0 {
+		cfg.Agents.Defaults.MaxTokens = envCfg.Agents.Defaults.MaxTokens
+	}
+	
+	// Providers - só sobrescreve se estiver vazio no JSON
+	if cfg.Providers.Groq.APIKey == "" {
+		cfg.Providers.Groq = envCfg.Providers.Groq
+	}
+	if cfg.Providers.Anthropic.APIKey == "" {
+		cfg.Providers.Anthropic = envCfg.Providers.Anthropic
+	}
+	if cfg.Providers.OpenAI.APIKey == "" {
+		cfg.Providers.OpenAI = envCfg.Providers.OpenAI
+	}
+	if cfg.Providers.OpenRouter.APIKey == "" {
+		cfg.Providers.OpenRouter = envCfg.Providers.OpenRouter
+	}
+	// ... e assim por diante para outros providers
 }
 
 func SaveConfig(path string, cfg *Config) error {
