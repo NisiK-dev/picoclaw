@@ -3,6 +3,7 @@
     "defaults": {
       "workspace": "/opt/render/project/.picoclaw/workspace",
       "restrict_to_workspace": true,
+      "provider": "groq",
       "model": "llama-3.1-8b-instant",
       "max_tokens": 8192,
       "temperature": 0.7,
