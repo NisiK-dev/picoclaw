@@ -25,8 +25,21 @@ RUN apk add --no-cache ca-certificates tzdata
 # Copy binary
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
 
-# Create picoclaw home directory
-RUN /usr/local/bin/picoclaw onboard
+# Create a non-root user (Render roda como non-root por padrão)
+RUN adduser -D -s /bin/sh picoclaw
+
+# Create picoclaw home directory e roda onboard como o usuário correto
+RUN mkdir -p /home/picoclaw/.picoclaw && \
+    chown -R picoclaw:picoclaw /home/picoclaw
+
+# Copiar o config.json explicitamente (garante que exista)
+COPY --from=builder /src/workspace/config.json /home/picoclaw/.picoclaw/config.json
+RUN chown picoclaw:picoclaw /home/picoclaw/.picoclaw/config.json
+
+# Set home environment variable
+ENV HOME=/home/picoclaw
+
+USER picoclaw
 
 ENTRYPOINT ["picoclaw"]
 CMD ["gateway"]
