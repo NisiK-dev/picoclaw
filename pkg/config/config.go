@@ -317,18 +317,37 @@ func DefaultConfig() *Config {
 func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
+	fmt.Printf("Loading config from: %s\n", path)
+	
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			fmt.Printf("Config file not found, using defaults\n")
 			return cfg, nil
 		}
 		return nil, err
 	}
 
-	// PRIMEIRO: Faz parse do JSON
+	fmt.Printf("Config file found, size: %d bytes\n", len(data))
+	fmt.Printf("Config content: %s\n", string(data))
+
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("Provider after JSON parse: %s\n", cfg.Agents.Defaults.Provider)
+	fmt.Printf("Model after JSON parse: %s\n", cfg.Agents.Defaults.Model)
+	fmt.Printf("Groq API Key after JSON parse: %s\n", cfg.Providers.Groq.APIKey)
+
+	if err := env.Parse(cfg); err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("Provider after env parse: %s\n", cfg.Agents.Defaults.Provider)
+	fmt.Printf("Model after env parse: %s\n", cfg.Agents.Defaults.Model)
+
+	return cfg, nil
+}
 
 	// DEPOIS: Faz parse das env vars apenas se não estiverem vazias no JSON
 	// Isso permite que o JSON sobrescreva as env vars
