@@ -3,7 +3,7 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model": "glm-4.7",
+      "model": "claude-3-5-sonnet-20240620",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -11,7 +11,7 @@
   },
   "channels": {
     "telegram": {
-      "enabled": false,
+      "enabled": true,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "proxy": "",
       "allow_from": ["YOUR_USER_ID"]
