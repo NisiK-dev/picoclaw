@@ -1,9 +1,9 @@
 {
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
+      "workspace": "/opt/render/project/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model": "claude-3-5-sonnet-20240620",
+      "model": "anthropic/claude-3-5-sonnet-20240620",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -12,13 +12,13 @@
   "channels": {
     "telegram": {
       "enabled": true,
-      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "token": "${PICOCLAW_CHANNELS_TELEGRAM_TOKEN}",
       "proxy": "",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": []
     },
     "discord": {
       "enabled": false,
-      "token": "YOUR_DISCORD_BOT_TOKEN",
+      "token": "",
       "allow_from": []
     },
     "maixcam": {
@@ -42,20 +42,20 @@
     },
     "dingtalk": {
       "enabled": false,
-      "client_id": "YOUR_CLIENT_ID",
-      "client_secret": "YOUR_CLIENT_SECRET",
+      "client_id": "",
+      "client_secret": "",
       "allow_from": []
     },
     "slack": {
       "enabled": false,
-      "bot_token": "xoxb-YOUR-BOT-TOKEN",
-      "app_token": "xapp-YOUR-APP-TOKEN",
+      "bot_token": "",
+      "app_token": "",
       "allow_from": []
     },
     "line": {
       "enabled": false,
-      "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
-      "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
+      "channel_secret": "",
+      "channel_access_token": "",
       "webhook_host": "0.0.0.0",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
@@ -64,44 +64,14 @@
   },
   "providers": {
     "anthropic": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "openai": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "openrouter": {
-      "api_key": "sk-or-v1-xxx",
-      "api_base": ""
-    },
-    "groq": {
-      "api_key": "gsk_xxx",
-      "api_base": ""
-    },
-    
-    "gemini": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "vllm": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "nvidia": {
-      "api_key": "nvapi-xxx",
-      "api_base": "",
-      "proxy": "http://127.0.0.1:7890"
-    },
-    "moonshot": {
-      "api_key": "sk-xxx",
-      "api_base": ""
+      "api_key": "${PICOCLAW_PROVIDERS_ANTHROPIC_API_KEY}",
+      "api_base": "https://api.anthropic.com"
     }
   },
   "tools": {
     "web": {
       "search": {
-        "api_key": "YOUR_BRAVE_API_KEY",
+        "api_key": "",
         "max_results": 5
       }
     }
@@ -116,6 +86,6 @@
   },
   "gateway": {
     "host": "0.0.0.0",
-    "port": 18790
+    "port": 10000
   }
 }
