@@ -79,10 +79,7 @@
       "api_key": "gsk_xxx",
       "api_base": ""
     },
-    "zhipu": {
-      "api_key": "YOUR_ZHIPU_API_KEY",
-      "api_base": ""
-    },
+    
     "gemini": {
       "api_key": "",
       "api_base": ""
