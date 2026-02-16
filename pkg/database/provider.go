@@ -10,7 +10,8 @@ import (
 
 // Provider implementa DBProvider para PostgreSQL/Supabase
 type Provider struct {
-	DB *sql.DB
+	DB     *sql.DB
+	config DBConfig
 }
 
 // NewProvider cria uma nova conexão com o banco
@@ -32,13 +33,36 @@ func NewProvider() (*Provider, error) {
 	return &Provider{DB: db}, nil
 }
 
-// SaveMessage salva uma mensagem no banco (stub - implementar depois)
+// IsConnected verifica se a conexão está ativa
+func (p *Provider) IsConnected() bool {
+	if p.DB == nil {
+		return false
+	}
+	return p.DB.Ping() == nil
+}
+
+// LoadSession carrega uma sessão do banco (stub)
+func (p *Provider) LoadSession(chatID string) (*Session, error) {
+	// TODO: implementar SELECT no banco
+	return &Session{
+		ID:     chatID,
+		ChatID: chatID,
+	}, nil
+}
+
+// SaveSession salva uma sessão no banco (stub)
+func (p *Provider) SaveSession(session *Session) error {
+	// TODO: implementar INSERT/UPDATE
+	return nil
+}
+
+// SaveMessage salva uma mensagem no banco (stub)
 func (p *Provider) SaveMessage(msg *Message) error {
 	// TODO: implementar INSERT
 	return nil
 }
 
-// GetMessages recupera mensagens do banco (stub - implementar depois)
+// GetMessages recupera mensagens do banco (stub)
 func (p *Provider) GetMessages(chatID string, limit int) ([]Message, error) {
 	// TODO: implementar SELECT
 	return []Message{}, nil
