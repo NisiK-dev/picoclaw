@@ -7,6 +7,9 @@ import (
 
 // DBProvider interface para operações de banco de dados
 type DBProvider interface {
+	IsConnected() bool
+	LoadSession(chatID string) (*Session, error)
+	SaveSession(session *Session) error
 	SaveMessage(msg *Message) error
 	GetMessages(chatID string, limit int) ([]Message, error)
 	Close() error
@@ -59,6 +62,7 @@ type Session struct {
 	ID           string    `json:"id"`
 	ChatID       string    `json:"chat_id"`
 	Channel      string    `json:"channel"`
+	Messages     []Message `json:"messages,omitempty"`
 	StartedAt    time.Time `json:"started_at"`
 	LastActivity time.Time `json:"last_activity"`
 }
