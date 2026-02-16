@@ -4,7 +4,7 @@
       "workspace": "/opt/render/project/.picoclaw/workspace",
       "restrict_to_workspace": true,
       "provider": "gemini",
-      "model": "",
+      "model": "gemini-1.5-flash",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
