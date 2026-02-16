@@ -1,75 +1,44 @@
 package database
 
 import (
-	"context"
-	"encoding/json"
+	"database/sql"
 	"fmt"
-	"time"
+	"os"
+
+	_ "github.com/lib/pq" // Driver PostgreSQL
 )
 
-// DBProvider interface unificada para qualquer banco de dados
-type DBProvider interface {
-	// Conexão
-	Connect(ctx context.Context) error
-	Disconnect() error
-	IsConnected() bool
-
-	// CRUD Básico
-	Create(ctx context.Context, table string, data map[string]interface{}) (string, error)
-	Read(ctx context.Context, table string, id string) (map[string]interface{}, error)
-	Update(ctx context.Context, table string, id string, data map[string]interface{}) error
-	Delete(ctx context.Context, table string, id string) error
-
-	// Queries
-	Query(ctx context.Context, table string, filters map[string]interface{}) ([]map[string]interface{}, error)
-	QueryRaw(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error)
-
-	// Específico para agente
-	SaveSession(ctx context.Context, sessionKey string, messages []Message) error
-	LoadSession(ctx context.Context, sessionKey string) ([]Message, error)
-	SaveMemory(ctx context.Context, key string, content string, metadata map[string]interface{}) error
-	LoadMemory(ctx context.Context, key string) (string, error)
+// Provider gerencia a conexão com o banco
+type Provider struct {
+	DB *sql.DB
 }
 
-// Message estrutura unificada de mensagem
-type Message struct {
-	ID        string                 `json:"id"`
-	Role      string                 `json:"role"` // user, assistant, system, tool
-	Content   string                 `json:"content"`
-	Metadata  map[string]interface{} `json:"metadata"`
-	CreatedAt time.Time              `json:"created_at"`
-}
-
-// DBConfig configuração genérica de banco
-type DBConfig struct {
-	Driver   string // "postgres", "mysql", "sqlite", "supabase"
-	Host     string
-	Port     string
-	Database string
-	Username string
-	Password string
-	SSLMode  string
-	
-	// Específico Supabase
-	SupabaseURL string
-	SupabaseKey string
-	
-	// Específico SQLite
-	SQLitePath string
-}
-
-// NewDBProvider factory para criar provider correto
-func NewDBProvider(config DBConfig) (DBProvider, error) {
-	switch config.Driver {
-	case "postgres", "postgresql":
-		return NewPostgresProvider(config), nil
-	case "supabase":
-		return NewSupabaseProvider(config), nil
-	case "sqlite":
-		return NewSQLiteProvider(config), nil
-	case "mysql":
-		return NewMySQLProvider(config), nil
-	default:
-		return nil, fmt.Errorf("driver não suportado: %s", config.Driver)
+// NewProvider cria uma conexão usando a URI do Supabase
+func NewProvider() (*Provider, error) {
+	// Pega a URI das variáveis de ambiente (Render/Supabase)
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL não configurada")
 	}
+
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao abrir conexão: %w", err)
+	}
+
+	// Testa a conexão
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("erro ao conectar no banco: %w", err)
+	}
+
+	// Configurações recomendadas para pool de conexões (Render/Supabase)
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+
+	return &Provider{DB: db}, nil
+}
+
+// Close fecha a conexão
+func (p *Provider) Close() error {
+	return p.DB.Close()
 }
