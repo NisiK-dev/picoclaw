@@ -575,28 +575,26 @@ func gatewayCmd() {
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
 	// ============================================
-	// INICIALIZAÇÃO DO BANCO DE DADOS (SUPABASE)
+	// INICIALIZAÇÃO DO BANCO DE DADOS (SUPABASE/POSTGRES)
 	// ============================================
-	var dbProvider database.DBProvider
+	var dbProvider *database.Provider
 	
-	// Configuração do banco de dados via variáveis de ambiente
+	// Configuração do banco de dados via DATABASE_URL ou variáveis individuais
 	dbConfig := database.DBConfig{
-		Driver:      getEnv("DB_DRIVER", "supabase"), // supabase, postgres, sqlite, mysql
-		SupabaseURL: getEnv("SUPABASE_URL", ""),
-		SupabaseKey: getEnv("SUPABASE_KEY", ""),
-		Host:        getEnv("DB_HOST", ""),
-		Port:        getEnv("DB_PORT", "5432"),
-		Database:    getEnv("DB_NAME", ""),
-		Username:    getEnv("DB_USER", ""),
-		Password:    getEnv("DB_PASSWORD", ""),
-		SQLitePath:  getEnv("DB_SQLITE_PATH", ""),
+		Host:     getEnv("DB_HOST", ""),
+		Port:     5432, // Porta padrão PostgreSQL
+		Database: getEnv("DB_NAME", "postgres"),
+		User:     getEnv("DB_USER", ""),
+		Password: getEnv("DB_PASSWORD", ""),
+		SSLMode:  getEnv("DB_SSLMODE", "require"),
 	}
 
-	// Tenta conectar ao banco se configurado
-	if dbConfig.SupabaseURL != "" || dbConfig.Host != "" || dbConfig.SQLitePath != "" {
+	// Se tiver DATABASE_URL, usa ela diretamente
+	if os.Getenv("DATABASE_URL") != "" || dbConfig.Host != "" {
+		var err error
 		dbProvider, err = database.NewDBProvider(dbConfig)
 		if err != nil {
-			logger.WarnC("database", "Configuração de banco inválida: "+err.Error())
+			logger.WarnC("database", "Falha ao criar provider: "+err.Error())
 		} else {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -605,11 +603,9 @@ func gatewayCmd() {
 				logger.WarnC("database", "Falha ao conectar ao banco: "+err.Error())
 				dbProvider = nil
 			} else {
-				logger.InfoC("database", "✓ Banco de dados conectado ("+dbConfig.Driver+")")
-				// Injeta no agente se o método existir
-				if setter, ok := interface{}(agentLoop).(interface{ SetDBProvider(database.DBProvider) }); ok {
-					setter.SetDBProvider(dbProvider)
-				}
+				logger.InfoC("database", "✓ Banco de dados conectado")
+				// Injeta no agente
+				agentLoop.SetDBProvider(dbProvider)
 			}
 		}
 	} else {
@@ -831,7 +827,7 @@ func statusCmd() {
 		}
 
 		// Mostra status do banco
-		if os.Getenv("SUPABASE_URL") != "" || os.Getenv("DB_HOST") != "" {
+		if os.Getenv("DATABASE_URL") != "" || os.Getenv("DB_HOST") != "" {
 			fmt.Println("Database: configured ✓")
 		} else {
 			fmt.Println("Database: not configured ✗")
