@@ -1,5 +1,5 @@
 // PicoClaw - Ultra-lightweight personal AI agent
-// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot  
+// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot   
 // License: MIT
 //
 // Copyright (c) 2026 PicoClaw contributors
@@ -273,7 +273,7 @@ func onboard() {
 	fmt.Printf("%s picoclaw is ready!\n", logo)
 	fmt.Println("\nNext steps:")
 	fmt.Println("  1. Add your API key to", configPath)
-	fmt.Println("     Get one at: https://openrouter.ai/keys  ")
+	fmt.Println("     Get one at: https://openrouter.ai/keys   ")
 	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
 }
 
@@ -575,54 +575,62 @@ func gatewayCmd() {
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
 	// ============================================
-// INICIALIZAÇÃO DO BANCO DE DADOS (POSTGRESQL)
-// ============================================
-var dbProvider *database.Provider
+	// INICIALIZAÇÃO DO BANCO DE DADOS (POSTGRESQL)
+	// ============================================
+	var dbProvider *database.Provider
 
-// Configuração do banco de dados
-dbConfig := database.DBConfig{}
+	// Configuração do banco de dados
+	dbConfig := database.DBConfig{}
 
-// Tenta usar DATABASE_URL primeiro (Render/Supabase fornecem isso)
-if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-    dbConfig.ConnectionString = dbURL
-} else {
-    // Fallback para variáveis individuais
-    port := 5432
-    if p := os.Getenv("DB_PORT"); p != "" {
-        fmt.Sscanf(p, "%d", &port)
-    }
-    
-    dbConfig = database.DBConfig{
-        Host:     os.Getenv("DB_HOST"),
-        Port:     port,
-        Database: getEnv("DB_NAME", "postgres"),
-        User:     os.Getenv("DB_USER"),
-        Password: os.Getenv("DB_PASSWORD"),
-        SSLMode:  getEnv("DB_SSLMODE", "require"),
-    }
-}
+	// Tenta usar DATABASE_URL primeiro (Render/Supabase fornecem isso)
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		dbConfig.SupabaseURL = dbURL
+	} else {
+		// Fallback para variáveis individuais
+		port := "5432"
+		if p := os.Getenv("DB_PORT"); p != "" {
+			port = p
+		}
+		
+		dbConfig = database.DBConfig{
+			Host:     os.Getenv("DB_HOST"),
+			Port:     port,
+			Database: getEnv("DB_NAME", "postgres"),
+			User:     os.Getenv("DB_USER"),
+			Password: os.Getenv("DB_PASSWORD"),
+			SSLMode:  getEnv("DB_SSLMODE", "require"),
+		}
+	}
 
-// Tenta conectar se configurado
-if dbConfig.ConnectionString != "" || dbConfig.Host != "" {
-    var err error
-    dbProvider, err = database.NewProvider(dbConfig)
-    if err != nil {
-        logger.WarnC("database", "Falha ao criar provider: "+err.Error())
-    } else {
-        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-        defer cancel()
-        
-        if err := dbProvider.Connect(ctx); err != nil {
-            logger.WarnC("database", "Falha ao conectar ao banco: "+err.Error())
-            dbProvider = nil
-        } else {
-            logger.InfoC("database", "✓ Banco de dados conectado")
-            agentLoop.SetDBProvider(dbProvider)
-        }
-    }
-} else {
-    logger.InfoC("database", "Banco de dados não configurado, usando storage local")
-}
+	// Tenta conectar se configurado
+	if dbConfig.SupabaseURL != "" || dbConfig.Host != "" {
+		// Usa NewDBProvider (retorna interface) e faz type assertion
+		dbProv, err := database.NewDBProvider(dbConfig)
+		if err != nil {
+			logger.WarnC("database", "Falha ao criar provider: "+err.Error())
+		} else {
+			// Type assertion para *Provider
+			var ok bool
+			dbProvider, ok = dbProv.(*database.Provider)
+			if !ok {
+				logger.WarnC("database", "Falha na type assertion do provider")
+			} else {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				
+				if err := dbProvider.Connect(ctx); err != nil {
+					logger.WarnC("database", "Falha ao conectar ao banco: "+err.Error())
+					dbProvider = nil
+				} else {
+					logger.InfoC("database", "✓ Banco de dados conectado")
+					agentLoop.SetDBProvider(dbProvider)
+				}
+			}
+		}
+	} else {
+		logger.InfoC("database", "Banco de dados não configurado, usando storage local")
+	}
+
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
 	startupInfo := agentLoop.GetStartupInfo()
