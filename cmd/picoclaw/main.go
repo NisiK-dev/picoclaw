@@ -1,3 +1,6 @@
+// Package: main
+// File: main.go
+
 // PicoClaw - Ultra-lightweight personal AI agent
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot   
 // License: MIT
@@ -575,65 +578,107 @@ func gatewayCmd() {
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
 	// ============================================
-// INICIALIZAÇÃO DO BANCO DE DADOS (SUPABASE)
-// ============================================
-var dbProvider *database.Provider
+	// INICIALIZAÇÃO DO BANCO DE DADOS (POSTGRESQL)
+	// CORREÇÃO: Usar connection pooler do Supabase (IPv4) em vez de conexão direta (IPv6)
+	// ============================================
+	var dbProvider *database.Provider
 
-// Configuração do banco de dados
-dbConfig := database.DBConfig{}
+	// Configuração do banco de dados
+	dbConfig := database.DBConfig{}
 
-// Tenta usar SUPABASE_URL primeiro
-if dbURL := os.Getenv("SUPABASE_URL"); dbURL != "" {
-    dbConfig.SupabaseURL = dbURL
-    // Adiciona a chave como parâmetro se disponível
-    if dbKey := os.Getenv("SUPABASE_KEY"); dbKey != "" {
-        dbConfig.SupabaseKey = dbKey
-    }
-} else if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-    dbConfig.SupabaseURL = dbURL
-} else {
-    // Fallback para variáveis individuais
-    port := "5432"
-    if p := os.Getenv("DB_PORT"); p != "" {
-        port = p
-    }
-    
-    dbConfig = database.DBConfig{
-        Host:     os.Getenv("DB_HOST"),
-        Port:     port,
-        Database: getEnv("DB_NAME", "postgres"),
-        User:     os.Getenv("DB_USER"),
-        Password: os.Getenv("DB_PASSWORD"),
-        SSLMode:  getEnv("DB_SSLMODE", "require"),
-    }
-}
+	// CORREÇÃO: Tenta usar DATABASE_URL primeiro (deve ser o connection pooler do Supabase)
+	// O pooler funciona com IPv4, diferente da conexão direta que usa IPv6 (não suportado no Render)
+	dbURL := os.Getenv("DATABASE_URL")
+	
+	// Se não tiver DATABASE_URL, tenta montar a partir das variáveis individuais
+	if dbURL == "" {
+		// Tenta usar DATABASE_POOLER_URL (alternativa)
+		dbURL = os.Getenv("DATABASE_POOLER_URL")
+	}
+	
+	// Se ainda não tiver, monta a partir das variáveis individuais
+	if dbURL == "" {
+		host := os.Getenv("DB_HOST")
+		port := os.Getenv("DB_PORT")
+		user := os.Getenv("DB_USER")
+		password := os.Getenv("DB_PASSWORD")
+		dbname := os.Getenv("DB_NAME")
+		sslmode := os.Getenv("DB_SSLMODE")
+		
+		// Valores padrão
+		if host == "" {
+			host = "localhost"
+		}
+		if port == "" {
+			port = "6543" // Porta do transaction pooler do Supabase (IPv4)
+		}
+		if user == "" {
+			user = "postgres"
+		}
+		if dbname == "" {
+			dbname = "postgres"
+		}
+		if sslmode == "" {
+			sslmode = "require"
+		}
+		
+		// CORREÇÃO IMPORTANTE: Se for conexão com Supabase, usar formato do pooler
+		// O formato do pooler é: postgres.[PROJECT_REF] como usuário
+		// e aws-0-[REGION].pooler.supabase.com como host
+		if strings.Contains(host, "supabase.co") && !strings.Contains(host, "pooler") {
+			// É uma conexão direta (IPv6) - precisa converter para pooler (IPv4)
+			// Extrai o project ref do host (db.czsqjrgjjgrpwuoimllb.supabase.co -> czsqjrgjjgrpwuoimllb)
+			parts := strings.Split(host, ".")
+			if len(parts) >= 2 {
+				projectRef := parts[1]
+				// Assume região us-west-1 (ajuste se necessário)
+				host = fmt.Sprintf("aws-0-us-west-1.pooler.supabase.com")
+				// Usuário do pooler inclui o project ref
+				user = fmt.Sprintf("postgres.%s", projectRef)
+				port = "6543" // Transaction pooler port
+				logger.InfoC("database", "Convertendo conexão Supabase direta para pooler (IPv4)")
+			}
+		}
+		
+		dbURL = fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=%s",
+			user, password, host, port, dbname, sslmode)
+	}
 
-// Tenta conectar se configurado
-if dbConfig.SupabaseURL != "" || dbConfig.Host != "" {
-    dbProv, err := database.NewDBProvider(dbConfig)
-    if err != nil {
-        logger.WarnC("database", "Falha ao criar provider: "+err.Error())
-    } else {
-        var ok bool
-        dbProvider, ok = dbProv.(*database.Provider)
-        if !ok {
-            logger.WarnC("database", "Falha na type assertion do provider")
-        } else {
-            ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-            defer cancel()
-            
-            if err := dbProvider.Connect(ctx); err != nil {
-                logger.WarnC("database", "Falha ao conectar ao banco: "+err.Error())
-                dbProvider = nil
-            } else {
-                logger.InfoC("database", "✓ Banco de dados conectado")
-                agentLoop.SetDBProvider(dbProvider)
-            }
-        }
-    }
-} else {
-    logger.InfoC("database", "Banco de dados não configurado, usando storage local")
-}
+	// Configura a URL no dbConfig
+	if dbURL != "" {
+		dbConfig.SupabaseURL = dbURL
+	}
+
+	// Tenta conectar se configurado
+	if dbConfig.SupabaseURL != "" {
+		logger.InfoC("database", "Tentando conectar ao banco de dados...")
+		
+		// Usa NewDBProvider (retorna interface) e faz type assertion
+		dbProv, err := database.NewDBProvider(dbConfig)
+		if err != nil {
+			logger.WarnC("database", "Falha ao criar provider: "+err.Error())
+		} else {
+			// Type assertion para *Provider
+			var ok bool
+			dbProvider, ok = dbProv.(*database.Provider)
+			if !ok {
+				logger.WarnC("database", "Falha na type assertion do provider")
+			} else {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				
+				if err := dbProvider.Connect(ctx); err != nil {
+					logger.WarnC("database", "Falha ao conectar ao banco: "+err.Error())
+					dbProvider = nil
+				} else {
+					logger.InfoC("database", "✓ Banco de dados conectado")
+					agentLoop.SetDBProvider(dbProvider)
+				}
+			}
+		}
+	} else {
+		logger.InfoC("database", "Banco de dados não configurado, usando storage local")
+	}
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
