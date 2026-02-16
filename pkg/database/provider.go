@@ -1,3 +1,6 @@
+// Package: database
+// File: provider.go
+
 package database
 
 import (
@@ -5,8 +8,8 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"strings"  // ← ADICIONADO
-	"time"
+	"time"  // ← ADICIONADO: import do pacote time
+	"strings" // ← ADICIONADO: import do pacote strings
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -18,29 +21,82 @@ type Provider struct {
 }
 
 // NewDBProvider cria provider a partir de config (usado em main.go)
+// CORREÇÃO: Melhor tratamento de erros e logging
 func NewDBProvider(config DBConfig) (DBProvider, error) {
-	// Se tiver SupabaseURL, usa ela
-	dbURL := config.SupabaseURL
+	// Se tiver DATABASE_URL, usa ela (pode ser pooler ou direta)
+	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = os.Getenv("DATABASE_URL")
+		// Tenta DATABASE_POOLER_URL (específica para pooler)
+		dbURL = os.Getenv("DATABASE_POOLER_URL")
 	}
+	
+	// Se ainda não tiver, gera a partir da config
 	if dbURL == "" {
 		dbURL = config.GetConnectionString()
+	} else {
+		// Se tem DATABASE_URL, verifica se precisa converter para pooler
+		// (caso esteja no Render e a URL seja IPv6)
+		if strings.Contains(dbURL, "db.") && strings.Contains(dbURL, "supabase.co") && !strings.Contains(dbURL, "pooler") {
+			// Detecta que é conexão direta Supabase (IPv6)
+			// Tenta converter automaticamente para pooler (IPv4)
+			parts := strings.Split(dbURL, "@")
+			if len(parts) == 2 {
+				credentials := parts[0]
+				rest := parts[1]
+				
+				// Extrai user:password
+				credParts := strings.Split(credentials, "://")
+				if len(credParts) == 2 {
+					userPass := credParts[1]
+					upParts := strings.Split(userPass, ":")
+					if len(upParts) >= 2 {
+						user := upParts[0]
+						password := strings.Join(upParts[1:], ":")
+						
+						// Extrai host do rest
+						hostParts := strings.Split(rest, ":")
+						if len(hostParts) >= 2 {
+							host := hostParts[0]
+							// Extrai project ref
+							hParts := strings.Split(host, ".")
+							if len(hParts) >= 2 {
+								projectRef := hParts[1]
+								// Reconstrói URL com pooler
+								dbURL = fmt.Sprintf("postgresql://%s.%s:%s@aws-0-us-west-1.pooler.supabase.com:6543/postgres?sslmode=require",
+									user, projectRef, password)
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
-	// Adiciona a chave do Supabase como parâmetro na URL se disponível
-	if config.SupabaseKey != "" {
-		separator := "?"
-		if strings.Contains(dbURL, "?") {
-			separator = "&"
+	// Log para debug (máscara a senha)
+	if dbURL != "" {
+		// Máscara a senha no log
+		maskedURL := dbURL
+		if atIndex := strings.Index(dbURL, "@"); atIndex > 0 {
+			protocolEnd := strings.Index(dbURL, "://")
+			if protocolEnd > 0 {
+				creds := dbURL[protocolEnd+3 : atIndex]
+				if colonIndex := strings.Index(creds, ":"); colonIndex > 0 {
+					maskedURL = dbURL[:protocolEnd+3] + creds[:colonIndex] + ":****" + dbURL[atIndex:]
+				}
+			}
 		}
-		dbURL = dbURL + separator + "apikey=" + config.SupabaseKey
+		fmt.Printf("[database] Conectando com: %s\n", maskedURL)
 	}
 
 	db, err := sql.Open("pgx", dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao abrir conexão: %w", err)
 	}
+
+	// Configura pool de conexões
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(5 * time.Minute)
 
 	p := &Provider{
 		DB:     db,
@@ -52,6 +108,7 @@ func NewDBProvider(config DBConfig) (DBProvider, error) {
 
 // NewProvider alias para compatibilidade
 func NewProvider() (*Provider, error) {
+	// ← CORRIGIDO: type assertion para converter DBProvider para *Provider
 	dbProvider, err := NewDBProvider(DBConfig{})
 	if err != nil {
 		return nil, err
@@ -99,10 +156,10 @@ func (p *Provider) SaveSession(ctx context.Context, chatID string, messages []Me
 // SaveMessage salva uma mensagem
 func (p *Provider) SaveMessage(msg *Message) error {
 	if msg.ID == "" {
-		msg.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+		msg.ID = fmt.Sprintf("%d", time.Now().UnixNano())  // ← time agora funciona
 	}
 	if msg.Timestamp.IsZero() {
-		msg.Timestamp = time.Now()
+		msg.Timestamp = time.Now()  // ← time agora funciona
 	}
 	
 	// Cria tabela se não existir
