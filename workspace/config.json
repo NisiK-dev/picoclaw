@@ -3,8 +3,8 @@
     "defaults": {
       "workspace": "/opt/render/project/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "provider": "groq",
-      "model": "llama-3.1-8b-instant",
+      "provider": "gemini",
+      "model": "gemini-1.5-flash",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -13,14 +13,14 @@
   "channels": {
     "telegram": {
       "enabled": true,
-      "token": "8166853397:AAE5-8nUz00qv-vemFjYFnUIxUm4yx9Z8bw",
+      "token": "${TELEGRAM_TOKEN}",
       "proxy": "",
       "allow_from": []
     }
   },
   "providers": {
     "gemini": {
-      "api_key": "AIzaSyATeAmYLXQem75UnRDdUPs7x5g4IbxiN3Y",
+      "api_key": "${GEMINI_API_KEY}",
       "api_base": "https://generativelanguage.googleapis.com/v1beta",
       "model": "gemini-1.5-flash"
     }
