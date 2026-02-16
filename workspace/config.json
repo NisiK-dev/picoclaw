@@ -30,7 +30,7 @@
     "port": 10000
   },
   "heartbeat": {
-    "enabled": true,
+    "enabled": false,
     "interval": 30
   }
 }
