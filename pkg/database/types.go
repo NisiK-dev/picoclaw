@@ -6,12 +6,11 @@ import (
 	"time"
 )
 
-// DBProvider interface para operações de banco de dados
-// Corresponde ao uso em pkg/agent/loop.go
+// DBProvider interface - compatível com loop.go
 type DBProvider interface {
 	IsConnected() bool
-	LoadSession(ctx context.Context, chatID string) (*Session, error)
-	SaveSession(ctx context.Context, chatID string, session *Session) error
+	LoadSession(ctx context.Context, chatID string) ([]Message, error)  // retorna []Message direto
+	SaveSession(ctx context.Context, chatID string, messages []Message) error  // recebe []Message
 	SaveMessage(msg *Message) error
 	GetMessages(chatID string, limit int) ([]Message, error)
 	Close() error
@@ -24,13 +23,12 @@ type DBConfig struct {
 	Host        string
 	Port        int
 	User        string
-	Password     string
-	Database     string
-	DBName       string
-	SSLMode      string
+	Password    string
+	Database    string
+	DBName      string
+	SSLMode     string
 }
 
-// GetConnectionString retorna a string de conexão PostgreSQL
 func (c DBConfig) GetConnectionString() string {
 	if c.SupabaseURL != "" {
 		return c.SupabaseURL
@@ -47,7 +45,7 @@ func (c DBConfig) GetConnectionString() string {
 		c.User, c.Password, c.Host, c.Port, dbname, ssl)
 }
 
-// Message representa uma mensagem armazenada no banco
+// Message representa uma mensagem
 type Message struct {
 	ID        string    `json:"id"`
 	Role      string    `json:"role"` // user, assistant, system
@@ -59,13 +57,12 @@ type Message struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Session representa uma sessão de conversa
-// Usado em loop.go:446 para range over session.Messages
+// Session - mantido para compatibilidade futura
 type Session struct {
 	ID           string    `json:"id"`
 	ChatID       string    `json:"chat_id"`
 	Channel      string    `json:"channel"`
-	Messages     []Message `json:"messages"` // Slice para poder fazer range
+	Messages     []Message `json:"messages"`
 	StartedAt    time.Time `json:"started_at"`
 	LastActivity time.Time `json:"last_activity"`
 }
