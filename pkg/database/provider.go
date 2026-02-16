@@ -5,7 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"time"  // ← ADICIONADO: import do pacote time
+	"strings"  // ← ADICIONADO
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -48,9 +49,9 @@ func NewDBProvider(config DBConfig) (DBProvider, error) {
 
 	return p, nil
 }
+
 // NewProvider alias para compatibilidade
 func NewProvider() (*Provider, error) {
-	// ← CORRIGIDO: type assertion para converter DBProvider para *Provider
 	dbProvider, err := NewDBProvider(DBConfig{})
 	if err != nil {
 		return nil, err
@@ -98,10 +99,10 @@ func (p *Provider) SaveSession(ctx context.Context, chatID string, messages []Me
 // SaveMessage salva uma mensagem
 func (p *Provider) SaveMessage(msg *Message) error {
 	if msg.ID == "" {
-		msg.ID = fmt.Sprintf("%d", time.Now().UnixNano())  // ← time agora funciona
+		msg.ID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	if msg.Timestamp.IsZero() {
-		msg.Timestamp = time.Now()  // ← time agora funciona
+		msg.Timestamp = time.Now()
 	}
 	
 	// Cria tabela se não existir
