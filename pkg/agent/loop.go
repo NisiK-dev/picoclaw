@@ -1,5 +1,5 @@
 // PicoClaw - Ultra-lightweight personal AI agent
-// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
+// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot 
 // License: MIT
 //
 // Copyright (c) 2026 PicoClaw contributors
@@ -386,7 +386,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	}
 
 	// 8. Optional: send response via bus
-	if opts.SendResponse {
+	// FIX: Não envia se for formato de tool call (evita mostrar código interno ao usuário)
+	if opts.SendResponse && !isToolCallFormat(finalContent) {
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
@@ -774,4 +775,35 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 		total += len(m.Content) / 4 // Simple heuristic: 4 chars per token
 	}
 	return total
+}
+
+// isToolCallFormat verifica se o conteúdo é formato interno de tool call
+// FIX: Evita que código interno seja mostrado ao usuário
+func isToolCallFormat(content string) bool {
+	if content == "" {
+		return false
+	}
+	
+	patterns := []string{
+		"(message={",
+		"(web_fetch={",
+		"(search={",
+		"(exec={",
+		"(read_file={",
+		"(write_file={",
+		"(list_dir={",
+		"(spawn={",
+		"(subagent={",
+		"(append_file={",
+		"(edit_file={",
+		"(i2c={",
+		"(spi={",
+	}
+	
+	for _, pattern := range patterns {
+		if strings.Contains(content, pattern) {
+			return true
+		}
+	}
+	return false
 }
