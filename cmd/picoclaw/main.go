@@ -1,5 +1,5 @@
 // PicoClaw - Ultra-lightweight personal AI agent
-// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot 
+// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot  
 // License: MIT
 //
 // Copyright (c) 2026 PicoClaw contributors
@@ -28,6 +28,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
+	"github.com/sipeed/picoclaw/pkg/database"
 	"github.com/sipeed/picoclaw/pkg/devices"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -145,6 +146,7 @@ func startHealthServer() {
 		logger.ErrorC("health", "Erro no health server: "+err.Error())
 	}
 }
+
 func main() {
 	// INICIA HEALTH SERVER EM PARALELO (para keep-alive no Render)
 	go startHealthServer()
@@ -271,7 +273,7 @@ func onboard() {
 	fmt.Printf("%s picoclaw is ready!\n", logo)
 	fmt.Println("\nNext steps:")
 	fmt.Println("  1. Add your API key to", configPath)
-	fmt.Println("     Get one at: https://openrouter.ai/keys ")
+	fmt.Println("     Get one at: https://openrouter.ai/keys  ")
 	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
 }
 
@@ -572,6 +574,48 @@ func gatewayCmd() {
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
+	// ============================================
+	// INICIALIZAÇÃO DO BANCO DE DADOS (SUPABASE)
+	// ============================================
+	var dbProvider database.DBProvider
+	
+	// Configuração do banco de dados via variáveis de ambiente
+	dbConfig := database.DBConfig{
+		Driver:      getEnv("DB_DRIVER", "supabase"), // supabase, postgres, sqlite, mysql
+		SupabaseURL: getEnv("SUPABASE_URL", ""),
+		SupabaseKey: getEnv("SUPABASE_KEY", ""),
+		Host:        getEnv("DB_HOST", ""),
+		Port:        getEnv("DB_PORT", "5432"),
+		Database:    getEnv("DB_NAME", ""),
+		Username:    getEnv("DB_USER", ""),
+		Password:    getEnv("DB_PASSWORD", ""),
+		SQLitePath:  getEnv("DB_SQLITE_PATH", ""),
+	}
+
+	// Tenta conectar ao banco se configurado
+	if dbConfig.SupabaseURL != "" || dbConfig.Host != "" || dbConfig.SQLitePath != "" {
+		dbProvider, err = database.NewDBProvider(dbConfig)
+		if err != nil {
+			logger.WarnC("database", "Configuração de banco inválida: "+err.Error())
+		} else {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			
+			if err := dbProvider.Connect(ctx); err != nil {
+				logger.WarnC("database", "Falha ao conectar ao banco: "+err.Error())
+				dbProvider = nil
+			} else {
+				logger.InfoC("database", "✓ Banco de dados conectado ("+dbConfig.Driver+")")
+				// Injeta no agente se o método existir
+				if setter, ok := interface{}(agentLoop).(interface{ SetDBProvider(database.DBProvider) }); ok {
+					setter.SetDBProvider(dbProvider)
+				}
+			}
+		}
+	} else {
+		logger.InfoC("database", "Banco de dados não configurado, usando storage local")
+	}
+
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
 	startupInfo := agentLoop.GetStartupInfo()
@@ -581,6 +625,13 @@ func gatewayCmd() {
 	fmt.Printf("  • Skills: %d/%d available\n",
 		skillsInfo["available"],
 		skillsInfo["total"])
+
+	// Mostra status do banco
+	if dbProvider != nil && dbProvider.IsConnected() {
+		fmt.Println("  • Database: ✓ connected")
+	} else {
+		fmt.Println("  • Database: ✗ not connected (using local storage)")
+	}
 
 	// Log to file as well
 	logger.InfoCF("agent", "Agent initialized",
@@ -696,6 +747,13 @@ func gatewayCmd() {
 	<-sigChan
 
 	fmt.Println("\nShutting down...")
+	
+	// Desconecta do banco de dados
+	if dbProvider != nil {
+		dbProvider.Disconnect()
+		logger.InfoC("database", "Banco de dados desconectado")
+	}
+	
 	cancel()
 	deviceService.Stop()
 	heartbeatService.Stop()
@@ -703,6 +761,14 @@ func gatewayCmd() {
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
+}
+
+// getEnv obtém variável de ambiente ou retorna valor padrão
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
 
 func statusCmd() {
@@ -762,6 +828,13 @@ func statusCmd() {
 			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers.VLLM.APIBase)
 		} else {
 			fmt.Println("vLLM/Local: not set")
+		}
+
+		// Mostra status do banco
+		if os.Getenv("SUPABASE_URL") != "" || os.Getenv("DB_HOST") != "" {
+			fmt.Println("Database: configured ✓")
+		} else {
+			fmt.Println("Database: not configured ✗")
 		}
 
 		store, _ := auth.LoadStore()
@@ -1077,7 +1150,7 @@ func cronHelp() {
 	fmt.Println("  -n, --name       Job name")
 	fmt.Println("  -m, --message    Message for agent")
 	fmt.Println("  -e, --every      Run every N seconds")
-	fmt.Println("  -c, --cron       Cron expression (e.g. '0 9 * * *')")
+	fmt.Println("  -c", "--cron       Cron expression (e.g. '0 9 * * *')")
 	fmt.Println("  -d, --deliver     Deliver response to channel")
 	fmt.Println("  --to             Recipient for delivery")
 	fmt.Println("  --channel        Channel for delivery")
