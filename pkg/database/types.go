@@ -7,10 +7,11 @@ import (
 )
 
 // DBProvider interface para operações de banco de dados
+// Corresponde ao uso em pkg/agent/loop.go
 type DBProvider interface {
 	IsConnected() bool
-	LoadSession(ctx context.Context, chatID string) ([]Message, error)
-	SaveSession(ctx context.Context, chatID string, messages []Message) error
+	LoadSession(ctx context.Context, chatID string) (*Session, error)
+	SaveSession(ctx context.Context, chatID string, session *Session) error
 	SaveMessage(msg *Message) error
 	GetMessages(chatID string, limit int) ([]Message, error)
 	Close() error
@@ -59,11 +60,12 @@ type Message struct {
 }
 
 // Session representa uma sessão de conversa
+// Usado em loop.go:446 para range over session.Messages
 type Session struct {
 	ID           string    `json:"id"`
 	ChatID       string    `json:"chat_id"`
 	Channel      string    `json:"channel"`
-	Messages     []Message `json:"messages"`
+	Messages     []Message `json:"messages"` // Slice para poder fazer range
 	StartedAt    time.Time `json:"started_at"`
 	LastActivity time.Time `json:"last_activity"`
 }
