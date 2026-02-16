@@ -575,43 +575,54 @@ func gatewayCmd() {
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
 	// ============================================
-	// INICIALIZAÇÃO DO BANCO DE DADOS (SUPABASE/POSTGRES)
-	// ============================================
-	var dbProvider *database.Provider
-	
-	// Configuração do banco de dados via DATABASE_URL ou variáveis individuais
-	dbConfig := database.DBConfig{
-		Host:     getEnv("DB_HOST", ""),
-		Port:     5432, // Porta padrão PostgreSQL
-		Database: getEnv("DB_NAME", "postgres"),
-		User:     getEnv("DB_USER", ""),
-		Password: getEnv("DB_PASSWORD", ""),
-		SSLMode:  getEnv("DB_SSLMODE", "require"),
-	}
+// INICIALIZAÇÃO DO BANCO DE DADOS (POSTGRESQL)
+// ============================================
+var dbProvider *database.Provider
 
-	// Se tiver DATABASE_URL, usa ela diretamente
-	if os.Getenv("DATABASE_URL") != "" || dbConfig.Host != "" {
-		var err error
-		dbProvider, err = database.NewDBProvider(dbConfig)
-		if err != nil {
-			logger.WarnC("database", "Falha ao criar provider: "+err.Error())
-		} else {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			
-			if err := dbProvider.Connect(ctx); err != nil {
-				logger.WarnC("database", "Falha ao conectar ao banco: "+err.Error())
-				dbProvider = nil
-			} else {
-				logger.InfoC("database", "✓ Banco de dados conectado")
-				// Injeta no agente
-				agentLoop.SetDBProvider(dbProvider)
-			}
-		}
-	} else {
-		logger.InfoC("database", "Banco de dados não configurado, usando storage local")
-	}
+// Configuração do banco de dados
+dbConfig := database.DBConfig{}
 
+// Tenta usar DATABASE_URL primeiro (Render/Supabase fornecem isso)
+if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+    dbConfig.ConnectionString = dbURL
+} else {
+    // Fallback para variáveis individuais
+    port := 5432
+    if p := os.Getenv("DB_PORT"); p != "" {
+        fmt.Sscanf(p, "%d", &port)
+    }
+    
+    dbConfig = database.DBConfig{
+        Host:     os.Getenv("DB_HOST"),
+        Port:     port,
+        Database: getEnv("DB_NAME", "postgres"),
+        User:     os.Getenv("DB_USER"),
+        Password: os.Getenv("DB_PASSWORD"),
+        SSLMode:  getEnv("DB_SSLMODE", "require"),
+    }
+}
+
+// Tenta conectar se configurado
+if dbConfig.ConnectionString != "" || dbConfig.Host != "" {
+    var err error
+    dbProvider, err = database.NewProvider(dbConfig)
+    if err != nil {
+        logger.WarnC("database", "Falha ao criar provider: "+err.Error())
+    } else {
+        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+        defer cancel()
+        
+        if err := dbProvider.Connect(ctx); err != nil {
+            logger.WarnC("database", "Falha ao conectar ao banco: "+err.Error())
+            dbProvider = nil
+        } else {
+            logger.InfoC("database", "✓ Banco de dados conectado")
+            agentLoop.SetDBProvider(dbProvider)
+        }
+    }
+} else {
+    logger.InfoC("database", "Banco de dados não configurado, usando storage local")
+}
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
 	startupInfo := agentLoop.GetStartupInfo()
