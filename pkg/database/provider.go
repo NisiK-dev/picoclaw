@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -41,17 +42,14 @@ func (p *Provider) IsConnected() bool {
 	return p.DB.Ping() == nil
 }
 
-// LoadSession carrega uma sessão do banco (stub)
-func (p *Provider) LoadSession(chatID string) (*Session, error) {
+// LoadSession carrega mensagens de uma sessão do banco (stub)
+func (p *Provider) LoadSession(ctx context.Context, chatID string) ([]Message, error) {
 	// TODO: implementar SELECT no banco
-	return &Session{
-		ID:     chatID,
-		ChatID: chatID,
-	}, nil
+	return []Message{}, nil
 }
 
-// SaveSession salva uma sessão no banco (stub)
-func (p *Provider) SaveSession(session *Session) error {
+// SaveSession salva mensagens de uma sessão no banco (stub)
+func (p *Provider) SaveSession(ctx context.Context, chatID string, messages []Message) error {
 	// TODO: implementar INSERT/UPDATE
 	return nil
 }
