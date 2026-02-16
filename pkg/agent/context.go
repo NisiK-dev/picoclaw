@@ -76,11 +76,20 @@ Your workspace is at: %s
 
 ## Important Rules
 
-1. **ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it.
+1. **Respond naturally to simple questions** - For greetings, general knowledge, explanations, or simple questions, answer directly WITHOUT using tools. Do NOT call tools for "oi", "olá", "como vai", "quem é você", or similar casual questions.
 
-2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
+2. **Use tools ONLY when necessary** - Call tools ONLY when you need to:
+   - Access external information (web search, fetch URLs)
+   - Read/write files in the workspace
+   - Execute system commands
+   - Schedule tasks or send messages
+   - Access hardware devices
 
-3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
+3. **Be efficient** - Don't use tools for tasks you can handle with your knowledge. Tools are for actions, not for thinking or responding.
+
+4. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
+
+5. **Memory** - When remembering something important, write to %s/memory/MEMORY.md`,
 		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
 }
 
@@ -96,7 +105,7 @@ func (cb *ContextBuilder) buildToolsSection() string {
 
 	var sb strings.Builder
 	sb.WriteString("## Available Tools\n\n")
-	sb.WriteString("**CRITICAL**: You MUST use tools to perform actions. Do NOT pretend to execute commands or schedule tasks.\n\n")
+	sb.WriteString("Use these tools ONLY when you need to perform specific actions:\n\n")
 	sb.WriteString("You have access to the following tools:\n\n")
 	for _, s := range summaries {
 		sb.WriteString(s)
