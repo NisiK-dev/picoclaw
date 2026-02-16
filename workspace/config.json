@@ -19,9 +19,10 @@
     }
   },
   "providers": {
-    "groq": {
-      "api_key": "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",
-      "api_base": "https://api.groq.com/openai/v1"
+    "gemini": {
+      "api_key": "AIzaSyATeAmYLXQem75UnRDdUPs7x5g4IbxiN3Y",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta",
+      "model": "gemini-1.5-flash"
     }
   },
   "gateway": {
