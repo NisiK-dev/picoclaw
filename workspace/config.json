@@ -20,7 +20,7 @@
   },
   "providers": {
     "gemini": {
-      "api_key": "AIzaSyATeAmYLXQem75UnRDdUPs7x5g4IbxiN3Y",
+      "api_key": "AIzaSyC1wlGdplps2qlZLvene7lPi2BL_4pc9_s",
       "api_base": "https://generativelanguage.googleapis.com/v1beta",
       "model": "gemini-1.5-flash"
     }
