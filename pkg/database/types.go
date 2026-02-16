@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -8,8 +9,8 @@ import (
 // DBProvider interface para operações de banco de dados
 type DBProvider interface {
 	IsConnected() bool
-	LoadSession(chatID string) (*Session, error)
-	SaveSession(session *Session) error
+	LoadSession(ctx context.Context, chatID string) ([]Message, error)
+	SaveSession(ctx context.Context, chatID string, messages []Message) error
 	SaveMessage(msg *Message) error
 	GetMessages(chatID string, limit int) ([]Message, error)
 	Close() error
@@ -62,7 +63,7 @@ type Session struct {
 	ID           string    `json:"id"`
 	ChatID       string    `json:"chat_id"`
 	Channel      string    `json:"channel"`
-	Messages     []Message `json:"messages,omitempty"`
+	Messages     []Message `json:"messages"`
 	StartedAt    time.Time `json:"started_at"`
 	LastActivity time.Time `json:"last_activity"`
 }
