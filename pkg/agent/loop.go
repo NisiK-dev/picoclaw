@@ -54,7 +54,7 @@ type processOptions struct {
 	DefaultResponse string // Response when LLM returns empty
 	EnableSummary   bool   // Whether to trigger summarization
 	SendResponse    bool   // Whether to send response via bus
-	NoHistory       bool   // If true, don't load session history (for heartbeat)
+	NoHistory       bool   // If true, don't load/save session history (for heartbeat)
 }
 
 // createToolRegistry creates a tool registry with common tools.
@@ -244,14 +244,14 @@ func (al *AgentLoop) ProcessDirectWithChannel(ctx context.Context, content, sess
 // Each heartbeat is independent and doesn't accumulate context.
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
 	return al.runAgentLoop(ctx, processOptions{
-		SessionKey:      "heartbeat",
+		SessionKey:      fmt.Sprintf("heartbeat:%d", time.Now().Unix()), // CORREÇÃO: session key única por heartbeat
 		Channel:         channel,
 		ChatID:          chatID,
 		UserMessage:     content,
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   false,
 		SendResponse:    false,
-		NoHistory:       true, // Don't load session history for heartbeat
+		NoHistory:       true, // Don't load/save session history for heartbeat
 	})
 }
 
@@ -378,9 +378,12 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		opts.ChatID,
 	)
 
-	// 3. Save user message to session (local e DB)
-	al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
-	al.saveMessageToDB(ctx, opts.SessionKey, "user", opts.UserMessage)
+	// 3. Save user message to session (local e DB) - APENAS se NoHistory for false
+	// CORREÇÃO: Não salva heartbeat no banco para evitar poluir o histórico
+	if !opts.NoHistory {
+		al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+		al.saveMessageToDB(ctx, opts.SessionKey, "user", opts.UserMessage)
+	}
 
 	// 4. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, messages, opts)
@@ -396,15 +399,18 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		finalContent = opts.DefaultResponse
 	}
 
-	// 6. Save final assistant message to session (local e DB)
-	al.sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
-	al.saveMessageToDB(ctx, opts.SessionKey, "assistant", finalContent)
-	al.sessions.Save(opts.SessionKey)
-	al.saveSessionToDB(ctx, opts.SessionKey)
+	// 6. Save final assistant message to session (local e DB) - APENAS se NoHistory for false
+	// CORREÇÃO: Não salva heartbeat no banco para evitar poluir o histórico
+	if !opts.NoHistory {
+		al.sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
+		al.saveMessageToDB(ctx, opts.SessionKey, "assistant", finalContent)
+		al.sessions.Save(opts.SessionKey)
+		al.saveSessionToDB(ctx, opts.SessionKey)
 
-	// 7. Optional: summarization
-	if opts.EnableSummary {
-		al.maybeSummarize(opts.SessionKey)
+		// 7. Optional: summarization - APENAS se NoHistory for false
+		if opts.EnableSummary {
+			al.maybeSummarize(opts.SessionKey)
+		}
 	}
 
 	// 8. Optional: send response via bus
@@ -460,6 +466,11 @@ func (al *AgentLoop) saveMessageToDB(ctx context.Context, sessionKey, role, cont
 		return
 	}
 
+	// CORREÇÃO: Não salva mensagens de heartbeat (session key começa com "heartbeat:")
+	if strings.HasPrefix(sessionKey, "heartbeat:") {
+		return
+	}
+
 	// Carrega histórico atual
 	messages, _ := al.dbProvider.LoadSession(ctx, sessionKey)
 	
@@ -480,6 +491,11 @@ func (al *AgentLoop) saveMessageToDB(ctx context.Context, sessionKey, role, cont
 // saveSessionToDB salva sessão completa no banco
 func (al *AgentLoop) saveSessionToDB(ctx context.Context, sessionKey string) {
 	if al.dbProvider == nil || !al.dbProvider.IsConnected() {
+		return
+	}
+
+	// CORREÇÃO: Não salva sessões de heartbeat (session key começa com "heartbeat:")
+	if strings.HasPrefix(sessionKey, "heartbeat:") {
 		return
 	}
 
@@ -596,8 +612,10 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 		}
 		messages = append(messages, assistantMsg)
 
-		// Save assistant message with tool calls to session
-		al.sessions.AddFullMessage(opts.SessionKey, assistantMsg)
+		// Save assistant message with tool calls to session (apenas se não for heartbeat)
+		if !opts.NoHistory {
+			al.sessions.AddFullMessage(opts.SessionKey, assistantMsg)
+		}
 
 		// Execute tool calls
 		for _, tc := range response.ToolCalls {
@@ -655,8 +673,10 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 			}
 			messages = append(messages, toolResultMsg)
 
-			// Save tool result message to session
-			al.sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
+			// Save tool result message to session (apenas se não for heartbeat)
+			if !opts.NoHistory {
+				al.sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
+			}
 		}
 	}
 
@@ -685,6 +705,11 @@ func (al *AgentLoop) updateToolContexts(channel, chatID string) {
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
 func (al *AgentLoop) maybeSummarize(sessionKey string) {
+	// CORREÇÃO: Não resume sessões de heartbeat
+	if strings.HasPrefix(sessionKey, "heartbeat:") {
+		return
+	}
+
 	newHistory := al.sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := al.contextWindow * 75 / 100
@@ -776,6 +801,11 @@ func formatToolsForLog(tools []providers.ToolDefinition) string {
 
 // summarizeSession summarizes the conversation history for a session.
 func (al *AgentLoop) summarizeSession(sessionKey string) {
+	// CORREÇÃO: Não resume sessões de heartbeat
+	if strings.HasPrefix(sessionKey, "heartbeat:") {
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
