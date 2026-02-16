@@ -8,11 +8,41 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"time"  // ← ADICIONADO: import do pacote time
-	"strings" // ← ADICIONADO: import do pacote strings
+	"regexp"
+	"strings"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
+
+// DBConfig configuração do banco de dados
+type DBConfig struct {
+	SupabaseURL string
+}
+
+// DBProvider interface para operações de banco de dados
+type DBProvider interface {
+	Connect(ctx context.Context) error
+	Disconnect() error
+	IsConnected() bool
+	LoadSession(ctx context.Context, chatID string) ([]Message, error)
+	SaveSession(ctx context.Context, chatID string, messages []Message) error
+	SaveMessage(msg *Message) error
+	GetMessages(chatID string, limit int) ([]Message, error)
+	Close() error
+}
+
+// Message representa uma mensagem no banco de dados
+type Message struct {
+	ID        string    `json:"id"`
+	Role      string    `json:"role"`
+	Content   string    `json:"content"`
+	SenderID  string    `json:"sender_id"`
+	ChatID    string    `json:"chat_id"`
+	Channel   string    `json:"channel"`
+	Timestamp time.Time `json:"timestamp"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
 // Provider implementa DBProvider
 type Provider struct {
@@ -21,82 +51,27 @@ type Provider struct {
 }
 
 // NewDBProvider cria provider a partir de config (usado em main.go)
-// CORREÇÃO: Melhor tratamento de erros e logging
 func NewDBProvider(config DBConfig) (DBProvider, error) {
-	// Se tiver DATABASE_URL, usa ela (pode ser pooler ou direta)
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		// Tenta DATABASE_POOLER_URL (específica para pooler)
-		dbURL = os.Getenv("DATABASE_POOLER_URL")
-	}
+	dbURL := getDatabaseURL()
 	
-	// Se ainda não tiver, gera a partir da config
 	if dbURL == "" {
-		dbURL = config.GetConnectionString()
-	} else {
-		// Se tem DATABASE_URL, verifica se precisa converter para pooler
-		// (caso esteja no Render e a URL seja IPv6)
-		if strings.Contains(dbURL, "db.") && strings.Contains(dbURL, "supabase.co") && !strings.Contains(dbURL, "pooler") {
-			// Detecta que é conexão direta Supabase (IPv6)
-			// Tenta converter automaticamente para pooler (IPv4)
-			parts := strings.Split(dbURL, "@")
-			if len(parts) == 2 {
-				credentials := parts[0]
-				rest := parts[1]
-				
-				// Extrai user:password
-				credParts := strings.Split(credentials, "://")
-				if len(credParts) == 2 {
-					userPass := credParts[1]
-					upParts := strings.Split(userPass, ":")
-					if len(upParts) >= 2 {
-						user := upParts[0]
-						password := strings.Join(upParts[1:], ":")
-						
-						// Extrai host do rest
-						hostParts := strings.Split(rest, ":")
-						if len(hostParts) >= 2 {
-							host := hostParts[0]
-							// Extrai project ref
-							hParts := strings.Split(host, ".")
-							if len(hParts) >= 2 {
-								projectRef := hParts[1]
-								// Reconstrói URL com pooler
-								dbURL = fmt.Sprintf("postgresql://%s.%s:%s@aws-0-us-west-1.pooler.supabase.com:6543/postgres?sslmode=require",
-									user, projectRef, password)
-							}
-						}
-					}
-				}
-			}
-		}
+		return nil, fmt.Errorf("nenhuma variável de ambiente de banco de dados configurada")
 	}
 
 	// Log para debug (máscara a senha)
-	if dbURL != "" {
-		// Máscara a senha no log
-		maskedURL := dbURL
-		if atIndex := strings.Index(dbURL, "@"); atIndex > 0 {
-			protocolEnd := strings.Index(dbURL, "://")
-			if protocolEnd > 0 {
-				creds := dbURL[protocolEnd+3 : atIndex]
-				if colonIndex := strings.Index(creds, ":"); colonIndex > 0 {
-					maskedURL = dbURL[:protocolEnd+3] + creds[:colonIndex] + ":****" + dbURL[atIndex:]
-				}
-			}
-		}
-		fmt.Printf("[database] Conectando com: %s\n", maskedURL)
-	}
+	maskedURL := maskPassword(dbURL)
+	fmt.Printf("[database] Conectando com: %s\n", maskedURL)
 
 	db, err := sql.Open("pgx", dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao abrir conexão: %w", err)
 	}
 
-	// Configura pool de conexões
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(10)
+	// Configura pool de conexões para ambiente serverless
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(2 * time.Minute)
 
 	p := &Provider{
 		DB:     db,
@@ -108,12 +83,126 @@ func NewDBProvider(config DBConfig) (DBProvider, error) {
 
 // NewProvider alias para compatibilidade
 func NewProvider() (*Provider, error) {
-	// ← CORRIGIDO: type assertion para converter DBProvider para *Provider
 	dbProvider, err := NewDBProvider(DBConfig{})
 	if err != nil {
 		return nil, err
 	}
 	return dbProvider.(*Provider), nil
+}
+
+// getDatabaseURL obtém a URL de conexão do banco de dados
+// Prioridade: DATABASE_URL > SUPABASE_URL > variáveis individuais
+func getDatabaseURL() string {
+	// 1. Tenta DATABASE_URL primeiro (formato padrão do Render/Supabase)
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		// Verifica se é uma URL do Supabase e precisa de ajustes
+		return normalizeSupabaseURL(dbURL)
+	}
+
+	// 2. Tenta SUPABASE_URL (específica do Supabase)
+	if dbURL := os.Getenv("SUPABASE_URL"); dbURL != "" {
+		return normalizeSupabaseURL(dbURL)
+	}
+
+	// 3. Tenta DATABASE_POOLER_URL (alternativa)
+	if dbURL := os.Getenv("DATABASE_POOLER_URL"); dbURL != "" {
+		return dbURL
+	}
+
+	// 4. Monta a partir de variáveis individuais
+	return buildURLFromComponents()
+}
+
+// normalizeSupabaseURL ajusta a URL do Supabase para funcionar corretamente
+func normalizeSupabaseURL(dbURL string) string {
+	// Se já é pooler, retorna como está
+	if strings.Contains(dbURL, "pooler.supabase.com") {
+		return dbURL
+	}
+
+	// Se é conexão direta (db.xxx.supabase.co), converte para pooler
+	// Padrão: postgresql://postgres:password@db.PROJECT_REF.supabase.co:5432/postgres
+	if strings.Contains(dbURL, "db.") && strings.Contains(dbURL, "supabase.co") {
+		return convertDirectToPooler(dbURL)
+	}
+
+	return dbURL
+}
+
+// convertDirectToPooler converte URL direta do Supabase para pooler
+func convertDirectToPooler(directURL string) string {
+	// Extrai componentes da URL
+	// postgresql://user:pass@host:port/db?params
+	
+	re := regexp.MustCompile(`postgresql://([^:]+):([^@]+)@db\.([^.]+)\.supabase\.co:(\d+)/([^?]+)(\?.*)?`)
+	matches := re.FindStringSubmatch(directURL)
+	
+	if len(matches) < 6 {
+		// Não conseguiu fazer parse, retorna original
+		return directURL
+	}
+
+	user := matches[1]
+	password := matches[2]
+	projectRef := matches[3]
+	// port := matches[4] // ignoramos, pooler usa 6543
+	database := matches[5]
+	params := matches[6]
+	if params == "" {
+		params = "?sslmode=require"
+	}
+
+	// Constrói URL do pooler de transação (IPv4 compatível)
+	// Formato: postgresql://user.project_ref:password@aws-0-region.pooler.supabase.com:6543/database
+	poolerURL := fmt.Sprintf(
+		"postgresql://%s.%s:%s@aws-0-us-east-1.pooler.supabase.com:6543/%s%s",
+		user, projectRef, password, database, params,
+	)
+
+	return poolerURL
+}
+
+// buildURLFromComponents monta URL a partir de variáveis individuais
+func buildURLFromComponents() string {
+	host := getEnv("DB_HOST", "localhost")
+	port := getEnv("DB_PORT", "5432")
+	user := getEnv("DB_USER", "postgres")
+	password := os.Getenv("DB_PASSWORD")
+	dbname := getEnv("DB_NAME", "postgres")
+	sslmode := getEnv("DB_SSLMODE", "require")
+
+	// Se for Supabase direto, converte para pooler
+	if strings.Contains(host, "supabase.co") && !strings.Contains(host, "pooler") {
+		// Extrai project ref do host (db.xxx.supabase.co)
+		parts := strings.Split(host, ".")
+		if len(parts) >= 3 && parts[0] == "db" {
+			projectRef := parts[1]
+			return fmt.Sprintf(
+				"postgresql://%s.%s:%s@aws-0-us-east-1.pooler.supabase.com:6543/%s?sslmode=%s",
+				user, projectRef, password, dbname, sslmode,
+			)
+		}
+	}
+
+	return fmt.Sprintf(
+		"postgresql://%s:%s@%s:%s/%s?sslmode=%s",
+		user, password, host, port, dbname, sslmode,
+	)
+}
+
+// maskPassword mascara a senha em uma URL para logging
+func maskPassword(dbURL string) string {
+	// Regex para encontrar senha em URL postgresql
+	re := regexp.MustCompile(`(postgresql://[^:]+):([^@]+)@`)
+	return re.ReplaceAllString(dbURL, "$1:****@")
+}
+
+// getEnv obtém variável de ambiente ou retorna valor padrão
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
 
 // Connect estabelece conexão com contexto (main.go)
@@ -156,10 +245,10 @@ func (p *Provider) SaveSession(ctx context.Context, chatID string, messages []Me
 // SaveMessage salva uma mensagem
 func (p *Provider) SaveMessage(msg *Message) error {
 	if msg.ID == "" {
-		msg.ID = fmt.Sprintf("%d", time.Now().UnixNano())  // ← time agora funciona
+		msg.ID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	if msg.Timestamp.IsZero() {
-		msg.Timestamp = time.Now()  // ← time agora funciona
+		msg.Timestamp = time.Now()
 	}
 	
 	// Cria tabela se não existir
@@ -233,4 +322,9 @@ func (p *Provider) Close() error {
 		return p.DB.Close()
 	}
 	return nil
+}
+
+// GetConnectionString retorna string de conexão (para compatibilidade)
+func (c DBConfig) GetConnectionString() string {
+	return getDatabaseURL()
 }
