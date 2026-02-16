@@ -49,7 +49,8 @@ func NewSupabaseProvider(config DBConfig) *SupabaseProvider {
 
 func (s *SupabaseProvider) Connect(ctx context.Context) error {
 	// Testa conexão fazendo uma query simples
-	_, err := s.Query(ctx "sessions", map[string]interface{}{"limit": 1})
+	// FIX: Adicionada vírgula faltante entre ctx e "sessions"
+	_, err := s.Query(ctx, "sessions", map[string]interface{}{"limit": 1})
 	if err != nil {
 		return fmt.Errorf("falha ao conectar ao Supabase: %w", err)
 	}
@@ -200,10 +201,10 @@ func (s *SupabaseProvider) SaveSession(ctx context.Context, sessionKey string, m
 	}
 
 	data := map[string]interface{}{
-		"session_key": sessionKey,
-		"messages":    string(messagesJSON),
+		"session_key":   sessionKey,
+		"messages":      string(messagesJSON),
 		"message_count": len(messages),
-		"updated_at":  time.Now().Format(time.RFC3339),
+		"updated_at":    time.Now().Format(time.RFC3339),
 	}
 
 	// Tenta update primeiro
@@ -245,7 +246,7 @@ func (s *SupabaseProvider) LoadSession(ctx context.Context, sessionKey string) (
 
 func (s *SupabaseProvider) SaveMemory(ctx context.Context, key string, content string, metadata map[string]interface{}) error {
 	metadataJSON, _ := json.Marshal(metadata)
-	
+
 	data := map[string]interface{}{
 		"key":      key,
 		"content":  content,
