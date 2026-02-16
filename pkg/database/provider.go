@@ -18,10 +18,22 @@ type Provider struct {
 
 // NewDBProvider cria provider a partir de config (usado em main.go)
 func NewDBProvider(config DBConfig) (DBProvider, error) {
-	// Se tiver DATABASE_URL, usa ela
-	dbURL := os.Getenv("DATABASE_URL")
+	// Se tiver SupabaseURL, usa ela
+	dbURL := config.SupabaseURL
+	if dbURL == "" {
+		dbURL = os.Getenv("DATABASE_URL")
+	}
 	if dbURL == "" {
 		dbURL = config.GetConnectionString()
+	}
+
+	// Adiciona a chave do Supabase como parâmetro na URL se disponível
+	if config.SupabaseKey != "" {
+		separator := "?"
+		if strings.Contains(dbURL, "?") {
+			separator = "&"
+		}
+		dbURL = dbURL + separator + "apikey=" + config.SupabaseKey
 	}
 
 	db, err := sql.Open("pgx", dbURL)
@@ -36,7 +48,6 @@ func NewDBProvider(config DBConfig) (DBProvider, error) {
 
 	return p, nil
 }
-
 // NewProvider alias para compatibilidade
 func NewProvider() (*Provider, error) {
 	// ← CORRIGIDO: type assertion para converter DBProvider para *Provider
