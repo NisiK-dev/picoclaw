@@ -15,35 +15,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// DBConfig configuração do banco de dados
-type DBConfig struct {
-	SupabaseURL string
-}
-
-// DBProvider interface para operações de banco de dados
-type DBProvider interface {
-	Connect(ctx context.Context) error
-	Disconnect() error
-	IsConnected() bool
-	LoadSession(ctx context.Context, chatID string) ([]Message, error)
-	SaveSession(ctx context.Context, chatID string, messages []Message) error
-	SaveMessage(msg *Message) error
-	GetMessages(chatID string, limit int) ([]Message, error)
-	Close() error
-}
-
-// Message representa uma mensagem no banco de dados
-type Message struct {
-	ID        string    `json:"id"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	SenderID  string    `json:"sender_id"`
-	ChatID    string    `json:"chat_id"`
-	Channel   string    `json:"channel"`
-	Timestamp time.Time `json:"timestamp"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // Provider implementa DBProvider
 type Provider struct {
 	DB     *sql.DB
@@ -131,7 +102,7 @@ func normalizeSupabaseURL(dbURL string) string {
 
 // convertDirectToPooler converte URL direta do Supabase para pooler
 func convertDirectToPooler(directURL string) string {
-	// Extrai componentes da URL
+	// Extrai componentes da URL usando regex
 	// postgresql://user:pass@host:port/db?params
 	
 	re := regexp.MustCompile(`postgresql://([^:]+):([^@]+)@db\.([^.]+)\.supabase\.co:(\d+)/([^?]+)(\?.*)?`)
@@ -322,9 +293,4 @@ func (p *Provider) Close() error {
 		return p.DB.Close()
 	}
 	return nil
-}
-
-// GetConnectionString retorna string de conexão (para compatibilidade)
-func (c DBConfig) GetConnectionString() string {
-	return getDatabaseURL()
 }
