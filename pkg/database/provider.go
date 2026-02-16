@@ -42,14 +42,19 @@ func (p *Provider) IsConnected() bool {
 	return p.DB.Ping() == nil
 }
 
-// LoadSession carrega mensagens de uma sessão do banco (stub)
-func (p *Provider) LoadSession(ctx context.Context, chatID string) ([]Message, error) {
+// LoadSession carrega uma sessão do banco (stub)
+// Retorna *Session para corresponder à interface
+func (p *Provider) LoadSession(ctx context.Context, chatID string) (*Session, error) {
 	// TODO: implementar SELECT no banco
-	return []Message{}, nil
+	return &Session{
+		ID:       chatID,
+		ChatID:   chatID,
+		Messages: []Message{}, // Inicializa slice vazio para range funcionar
+	}, nil
 }
 
-// SaveSession salva mensagens de uma sessão no banco (stub)
-func (p *Provider) SaveSession(ctx context.Context, chatID string, messages []Message) error {
+// SaveSession salva uma sessão no banco (stub)
+func (p *Provider) SaveSession(ctx context.Context, chatID string, session *Session) error {
 	// TODO: implementar INSERT/UPDATE
 	return nil
 }
