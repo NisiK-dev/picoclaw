@@ -1,5 +1,5 @@
 // PicoClaw - Ultra-lightweight personal AI agent
-// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot 
+// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot  
 // License: MIT
 //
 // Copyright (c) 2026 PicoClaw contributors
@@ -20,6 +20,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/database"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -41,6 +42,7 @@ type AgentLoop struct {
 	tools          *tools.ToolRegistry
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
+	dbProvider     database.DBProvider // NOVO: Banco de dados para persistência
 }
 
 // processOptions configures how a message is processed
@@ -145,7 +147,19 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
 		summarizing:    sync.Map{},
+		dbProvider:     nil, // Inicializado posteriormente via SetDBProvider
 	}
+}
+
+// SetDBProvider injeta o provider de banco de dados
+func (al *AgentLoop) SetDBProvider(db database.DBProvider) {
+	al.dbProvider = db
+	logger.InfoC("agent", "Database provider injetado no AgentLoop")
+}
+
+// GetDBProvider retorna o provider de banco de dados
+func (al *AgentLoop) GetDBProvider() database.DBProvider {
+	return al.dbProvider
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
@@ -347,7 +361,12 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	var history []providers.Message
 	var summary string
 	if !opts.NoHistory {
-		history = al.sessions.GetHistory(opts.SessionKey)
+		// Tenta carregar do banco de dados primeiro
+		history = al.loadSessionFromDB(ctx, opts.SessionKey)
+		if history == nil {
+			// Fallback para storage local
+			history = al.sessions.GetHistory(opts.SessionKey)
+		}
 		summary = al.sessions.GetSummary(opts.SessionKey)
 	}
 	messages := al.contextBuilder.BuildMessages(
@@ -359,8 +378,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		opts.ChatID,
 	)
 
-	// 3. Save user message to session
+	// 3. Save user message to session (local e DB)
 	al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+	al.saveMessageToDB(ctx, opts.SessionKey, "user", opts.UserMessage)
 
 	// 4. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, messages, opts)
@@ -376,9 +396,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		finalContent = opts.DefaultResponse
 	}
 
-	// 6. Save final assistant message to session
+	// 6. Save final assistant message to session (local e DB)
 	al.sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
+	al.saveMessageToDB(ctx, opts.SessionKey, "assistant", finalContent)
 	al.sessions.Save(opts.SessionKey)
+	al.saveSessionToDB(ctx, opts.SessionKey)
 
 	// 7. Optional: summarization
 	if opts.EnableSummary {
@@ -405,6 +427,79 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		})
 
 	return finalContent, nil
+}
+
+// loadSessionFromDB carrega sessão do banco de dados
+func (al *AgentLoop) loadSessionFromDB(ctx context.Context, sessionKey string) []providers.Message {
+	if al.dbProvider == nil || !al.dbProvider.IsConnected() {
+		return nil
+	}
+
+	messages, err := al.dbProvider.LoadSession(ctx, sessionKey)
+	if err != nil {
+		logger.DebugC("database", "Sessão não encontrada no DB: "+err.Error())
+		return nil
+	}
+
+	// Converte []database.Message para []providers.Message
+	var result []providers.Message
+	for _, msg := range messages {
+		result = append(result, providers.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
+	}
+
+	logger.DebugC("database", fmt.Sprintf("Sessão %s carregada do DB: %d mensagens", sessionKey, len(result)))
+	return result
+}
+
+// saveMessageToDB salva mensagem individual no banco
+func (al *AgentLoop) saveMessageToDB(ctx context.Context, sessionKey, role, content string) {
+	if al.dbProvider == nil || !al.dbProvider.IsConnected() {
+		return
+	}
+
+	// Carrega histórico atual
+	messages, _ := al.dbProvider.LoadSession(ctx, sessionKey)
+	
+	// Adiciona nova mensagem
+	messages = append(messages, database.Message{
+		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
+		Role:      role,
+		Content:   content,
+		CreatedAt: time.Now(),
+	})
+
+	// Salva de volta
+	if err := al.dbProvider.SaveSession(ctx, sessionKey, messages); err != nil {
+		logger.WarnC("database", "Falha ao salvar mensagem no DB: "+err.Error())
+	}
+}
+
+// saveSessionToDB salva sessão completa no banco
+func (al *AgentLoop) saveSessionToDB(ctx context.Context, sessionKey string) {
+	if al.dbProvider == nil || !al.dbProvider.IsConnected() {
+		return
+	}
+
+	// Converte histórico local para formato do DB
+	localHistory := al.sessions.GetHistory(sessionKey)
+	var messages []database.Message
+	for _, msg := range localHistory {
+		messages = append(messages, database.Message{
+			ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
+			Role:      msg.Role,
+			Content:   msg.Content,
+			CreatedAt: time.Now(),
+		})
+	}
+
+	if err := al.dbProvider.SaveSession(ctx, sessionKey, messages); err != nil {
+		logger.WarnC("database", "Falha ao salvar sessão no DB: "+err.Error())
+	} else {
+		logger.DebugC("database", "Sessão salva no DB: "+sessionKey)
+	}
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
@@ -618,6 +713,13 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	// Skills info
 	info["skills"] = al.contextBuilder.GetSkillsInfo()
 
+	// Database info
+	if al.dbProvider != nil && al.dbProvider.IsConnected() {
+		info["database"] = "connected"
+	} else {
+		info["database"] = "not connected"
+	}
+
 	return info
 }
 
@@ -744,6 +846,9 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 		al.sessions.SetSummary(sessionKey, finalSummary)
 		al.sessions.TruncateHistory(sessionKey, 4)
 		al.sessions.Save(sessionKey)
+		
+		// Também salva no banco se disponível
+		al.saveSessionToDB(ctx, sessionKey)
 	}
 }
 
