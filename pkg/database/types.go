@@ -5,30 +5,31 @@ import (
 	"time"
 )
 
+// DBProvider interface para operações de banco de dados
+type DBProvider interface {
+	SaveMessage(msg *Message) error
+	GetMessages(chatID string, limit int) ([]Message, error)
+	Close() error
+}
+
 // DBConfig configuração do Supabase/PostgreSQL
-// Suporta tanto conexão URI quanto parâmetros individuais
 type DBConfig struct {
-	// Para conexão via Supabase REST API
 	SupabaseURL string
 	SupabaseKey string
-	
-	// Para conexão direta PostgreSQL
-	Host     string
-	Port     int
-	User     string
-	Password string
-	Database string
-	DBName   string // alias para Database
-	SSLMode  string
+	Host        string
+	Port        int
+	User        string
+	Password     string
+	Database     string
+	DBName       string
+	SSLMode      string
 }
 
 // GetConnectionString retorna a string de conexão PostgreSQL
 func (c DBConfig) GetConnectionString() string {
-	// Se tiver SupabaseURL, usa ele
 	if c.SupabaseURL != "" {
 		return c.SupabaseURL
 	}
-	// Senão, monta a string
 	dbname := c.Database
 	if dbname == "" {
 		dbname = c.DBName
@@ -44,6 +45,7 @@ func (c DBConfig) GetConnectionString() string {
 // Message representa uma mensagem armazenada no banco
 type Message struct {
 	ID        string    `json:"id"`
+	Role      string    `json:"role"` // user, assistant, system
 	Content   string    `json:"content"`
 	SenderID  string    `json:"sender_id"`
 	ChatID    string    `json:"chat_id"`
