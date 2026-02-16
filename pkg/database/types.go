@@ -1,6 +1,9 @@
 package database
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // DBConfig configuração do Supabase/PostgreSQL
 // Suporta tanto conexão URI quanto parâmetros individuais
