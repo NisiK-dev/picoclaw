@@ -122,7 +122,7 @@ func copyDirectory(src, dst string) error {
 func startHealthServer() {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8080" // fallback apenas se não houver PORT definida
 	}
 	if port[0] != ':' {
 		port = ":" + port
@@ -145,7 +145,6 @@ func startHealthServer() {
 		logger.ErrorC("health", "Erro no health server: "+err.Error())
 	}
 }
-
 func main() {
 	// INICIA HEALTH SERVER EM PARALELO (para keep-alive no Render)
 	go startHealthServer()
