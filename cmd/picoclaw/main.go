@@ -158,54 +158,54 @@ var (
 	lockFilePath = filepath.Join(os.TempDir(), "picoclaw_gateway.lock")
 )
 
-// acquireLock tenta adquirir um lock exclusivo para esta instância
-// Retorna true se conseguiu o lock, false se outra instância está rodando
-func acquireLock() bool {
-	// Tenta criar arquivo de lock exclusivo
-	file, err := os.OpenFile(lockFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
-	if err != nil {
-		// Arquivo já existe, verifica se é de uma instância antiga
-		info, statErr := os.Stat(lockFilePath)
-		if statErr != nil {
-			// Não consegue ler o arquivo, assume que está em uso
-			return false
-		}
-		
-		// Se o lock tem mais de 2 minutos, provavelmente é de uma instância morta
-		if time.Since(info.ModTime()) > 2*time.Minute {
-			// Remove lock antigo e tenta novamente
-			os.Remove(lockFilePath)
-			file, err = os.OpenFile(lockFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
-			if err != nil {
-				return false
-			}
-		} else {
-			// Lock recente, outra instância está ativa
-			return false
-		}
+// acquireLockDB tenta adquirir lock no banco de dados
+func acquireLockDB(db database.DBProvider) bool {
+	if db == nil || !db.IsConnected() {
+		return false
 	}
 	
-	// Escreve PID e timestamp no lock
-	pid := os.Getpid()
-	timestamp := time.Now().Unix()
-	fmt.Fprintf(file, "%d\n%d\n", pid, timestamp)
-	file.Close()
+	instanceID := fmt.Sprintf("pid_%d_%d", os.Getpid(), time.Now().Unix())
 	
-	// Inicia goroutine para manter o lock atualizado
-	go maintainLock()
+	// Tenta adquirir lock
+	_, err := db.Exec(`
+		UPDATE service_lock 
+		SET instance_id = $1,
+		    started_at = NOW(),
+		    expires_at = NOW() + INTERVAL '5 minutes'
+		WHERE id = 1 
+		  AND (expires_at < NOW() OR instance_id = 'none')
+	`, instanceID)
 	
-	return true
+	if err != nil {
+		return false
+	}
+	
+	// Verifica se conseguiu
+	var currentID string
+	row := db.QueryRow("SELECT instance_id FROM service_lock WHERE id = 1")
+	row.Scan(&currentID)
+	
+	return currentID == instanceID
 }
 
-// maintainLock mantém o arquivo de lock atualizado enquanto a instância roda
-func maintainLock() {
-	ticker := time.NewTicker(30 * time.Second)
+// releaseLockDB libera o lock
+func releaseLockDB(db database.DBProvider) {
+	if db == nil || !db.IsConnected() {
+		return
+	}
+	
+	db.Exec("UPDATE service_lock SET instance_id = 'none', expires_at = NOW() WHERE id = 1")
+}
+
+// maintainLockDB mantém o lock atualizado
+func maintainLockDB(db database.DBProvider) {
+	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 	
 	for range ticker.C {
-		// Atualiza timestamp do lock
-		now := time.Now()
-		os.Chtimes(lockFilePath, now, now)
+		if db != nil && db.IsConnected() {
+			db.Exec("UPDATE service_lock SET expires_at = NOW() + INTERVAL '5 minutes' WHERE id = 1")
+		}
 	}
 }
 
