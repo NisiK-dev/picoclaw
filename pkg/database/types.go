@@ -5,6 +5,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -20,6 +21,11 @@ type DBProvider interface {
 	SaveMessage(msg *Message) error
 	GetMessages(chatID string, limit int) ([]Message, error)
 	Close() error
+	
+	// NOVOS MÉTODOS PARA LOCK E QUERIES:
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	QueryRow(query string, args ...interface{}) *sql.Row
+	Query(query string, args ...interface{}) (*sql.Rows, error)
 }
 
 // DBConfig completa - 100% compatível com main.go
