@@ -150,87 +150,6 @@ func startHealthServer() {
 	}
 }
 
-// =============================================================================
-// SISTEMA DE LOCK PARA PREVENIR DUPLICATAS NO RENDER
-// =============================================================================
-
-var (
-	lockFilePath = filepath.Join(os.TempDir(), "picoclaw_gateway.lock")
-)
-
-// acquireLockDB tenta adquirir lock no banco de dados
-func acquireLockDB(db database.DBProvider) bool {
-	if db == nil || !db.IsConnected() {
-		return false
-	}
-	
-	instanceID := fmt.Sprintf("pid_%d_%d", os.Getpid(), time.Now().Unix())
-	
-	// Tenta adquirir lock
-	_, err := db.Exec(`
-		UPDATE service_lock 
-		SET instance_id = $1,
-		    started_at = NOW(),
-		    expires_at = NOW() + INTERVAL '5 minutes'
-		WHERE id = 1 
-		  AND (expires_at < NOW() OR instance_id = 'none')
-	`, instanceID)
-	
-	if err != nil {
-		return false
-	}
-	
-	// Verifica se conseguiu
-	var currentID string
-	row := db.QueryRow("SELECT instance_id FROM service_lock WHERE id = 1")
-	row.Scan(&currentID)
-	
-	return currentID == instanceID
-}
-
-// releaseLockDB libera o lock
-func releaseLockDB(db database.DBProvider) {
-	if db == nil || !db.IsConnected() {
-		return
-	}
-	
-	db.Exec("UPDATE service_lock SET instance_id = 'none', expires_at = NOW() WHERE id = 1")
-}
-
-// maintainLockDB mantém o lock atualizado
-func maintainLockDB(db database.DBProvider) {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-	
-	for range ticker.C {
-		if db != nil && db.IsConnected() {
-			db.Exec("UPDATE service_lock SET expires_at = NOW() + INTERVAL '5 minutes' WHERE id = 1")
-		}
-	}
-}
-
-// releaseLock remove o arquivo de lock ao encerrar
-func releaseLock() {
-	os.Remove(lockFilePath)
-}
-
-// waitForLock aguarda até que o lock esteja disponível (com timeout)
-func waitForLock(timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	
-	for time.Now().Before(deadline) {
-		if acquireLock() {
-			return true
-		}
-		// Aguarda 2 segundos antes de tentar novamente
-		time.Sleep(2 * time.Second)
-	}
-	
-	return false
-}
-
-// =============================================================================
-
 func main() {
 	// INICIA HEALTH SERVER EM PARALELO (para keep-alive no Render)
 	go startHealthServer()
@@ -633,7 +552,6 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 }
 
 func gatewayCmd() {
-	
 	// Check for --debug flag
 	args := os.Args[2:]
 	for _, arg := range args {
@@ -661,16 +579,24 @@ func gatewayCmd() {
 
 	// ============================================
 	// INICIALIZAÇÃO DO BANCO DE DADOS (POSTGRESQL)
+	// CORREÇÃO: Usar connection pooler do Supabase (IPv4) em vez de conexão direta (IPv6)
 	// ============================================
 	var dbProvider *database.Provider
 
 	// Configuração do banco de dados
 	dbConfig := database.DBConfig{}
 
-	// Tenta usar DATABASE_URL primeiro
+	// CORREÇÃO: Tenta usar DATABASE_URL primeiro (deve ser o connection pooler do Supabase)
+	// O pooler funciona com IPv4, diferente da conexão direta que usa IPv6 (não suportado no Render)
 	dbURL := os.Getenv("DATABASE_URL")
 	
 	// Se não tiver DATABASE_URL, tenta montar a partir das variáveis individuais
+	if dbURL == "" {
+		// Tenta usar DATABASE_POOLER_URL (alternativa)
+		dbURL = os.Getenv("DATABASE_POOLER_URL")
+	}
+	
+	// Se ainda não tiver, monta a partir das variáveis individuais
 	if dbURL == "" {
 		host := os.Getenv("DB_HOST")
 		port := os.Getenv("DB_PORT")
@@ -684,7 +610,7 @@ func gatewayCmd() {
 			host = "localhost"
 		}
 		if port == "" {
-			port = "6543"
+			port = "6543" // Porta do transaction pooler do Supabase (IPv4)
 		}
 		if user == "" {
 			user = "postgres"
@@ -694,6 +620,24 @@ func gatewayCmd() {
 		}
 		if sslmode == "" {
 			sslmode = "require"
+		}
+		
+		// CORREÇÃO IMPORTANTE: Se for conexão com Supabase, usar formato do pooler
+		// O formato do pooler é: postgres.[PROJECT_REF] como usuário
+		// e aws-0-[REGION].pooler.supabase.com como host
+		if strings.Contains(host, "supabase.co") && !strings.Contains(host, "pooler") {
+			// É uma conexão direta (IPv6) - precisa converter para pooler (IPv4)
+			// Extrai o project ref do host (db.czsqjrgjjgrpwuoimllb.supabase.co -> czsqjrgjjgrpwuoimllb)
+			parts := strings.Split(host, ".")
+			if len(parts) >= 2 {
+				projectRef := parts[1]
+				// Assume região us-west-1 (ajuste se necessário)
+				host = fmt.Sprintf("aws-0-us-west-1.pooler.supabase.com")
+				// Usuário do pooler inclui o project ref
+				user = fmt.Sprintf("postgres.%s", projectRef)
+				port = "6543" // Transaction pooler port
+				logger.InfoC("database", "Convertendo conexão Supabase direta para pooler (IPv4)")
+			}
 		}
 		
 		dbURL = fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=%s",
@@ -728,20 +672,6 @@ func gatewayCmd() {
 					dbProvider = nil
 				} else {
 					logger.InfoC("database", "✓ Banco de dados conectado")
-
-					// TENTA ADQUIRIR LOCK NO BANCO
-					if !acquireLockDB(dbProvider) {
-						logger.ErrorC("gateway", "OUTRA INSTÂNCIA JÁ ESTÁ RODANDO (lock no banco)")
-						logger.ErrorC("gateway", "Encerrando para evitar conflito...")
-						os.Exit(1)
-					}
-
-					// Inicia manutenção do lock
-					go maintainLockDB(dbProvider)
-					defer releaseLockDB(dbProvider)
-
-					logger.InfoC("gateway", "✓ Lock adquirido no banco de dados")
-
 					agentLoop.SetDBProvider(dbProvider)
 				}
 			}
@@ -772,7 +702,7 @@ func gatewayCmd() {
 		map[string]interface{}{
 			"tools_count":      toolsInfo["count"],
 			"skills_total":     toolsInfo["total"],
-			"skills_available": skillsInfo["available"],
+			"skills_available": toolsInfo["available"],
 		})
 
 	// Setup cron tool and service
@@ -895,6 +825,14 @@ func gatewayCmd() {
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
+}
+
+// getEnv obtém variável de ambiente ou retorna valor padrão
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
 
 func statusCmd() {
@@ -1639,4 +1577,54 @@ func skillsShowCmd(loader *skills.SkillsLoader, skillName string) {
 	fmt.Printf("\n📦 Skill: %s\n", skillName)
 	fmt.Println("----------------------")
 	fmt.Println(content)
+}
+
+// ============================================
+// FUNÇÕES DE LOCK DISTRIBUÍDO (POSTGRESQL)
+// ============================================
+
+// acquireLock tenta adquirir um lock exclusivo no PostgreSQL usando pg_try_advisory_lock
+// Retorna true se conseguiu o lock, false se não conseguiu (não bloqueia)
+func acquireLock(db database.DBProvider, lockID int64) (bool, error) {
+	var acquired bool
+	row := db.QueryRow("SELECT pg_try_advisory_lock($1)", lockID)
+	err := row.Scan(&acquired)
+	return acquired, err
+}
+
+// acquireLockWait tenta adquirir um lock exclusivo, aguardando se necessário
+// Usa pg_advisory_lock (bloqueante) - cuidado com deadlocks!
+func acquireLockWait(db database.DBProvider, lockID int64) error {
+	_, err := db.Exec("SELECT pg_advisory_lock($1)", lockID)
+	return err
+}
+
+// releaseLock libera um lock adquirido anteriormente
+func releaseLock(db database.DBProvider, lockID int64) error {
+	_, err := db.Exec("SELECT pg_advisory_unlock($1)", lockID)
+	return err
+}
+
+// releaseAllLocks libera todos os locks da sessão atual
+func releaseAllLocks(db database.DBProvider) error {
+	_, err := db.Exec("SELECT pg_advisory_unlock_all()")
+	return err
+}
+
+// withLock executa uma função dentro de um contexto de lock (padrão seguro)
+func withLock(db database.DBProvider, lockID int64, fn func() error) error {
+	// Tenta adquirir o lock
+	acquired, err := acquireLock(db, lockID)
+	if err != nil {
+		return fmt.Errorf("erro ao tentar adquirir lock: %w", err)
+	}
+	if !acquired {
+		return fmt.Errorf("não foi possível adquirir lock %d (já está em uso)", lockID)
+	}
+	
+	// Garante que o lock será liberado no final
+	defer releaseLock(db, lockID)
+	
+	// Executa a função
+	return fn()
 }
