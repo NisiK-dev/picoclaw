@@ -633,45 +633,6 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 }
 
 func gatewayCmd() {
-	// ... código anterior ...
-	
-	// INICIALIZAÇÃO DO BANCO DE DADOS
-	var dbProvider *database.Provider
-	dbConfig := database.DBConfig{}
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL != "" {
-		dbConfig.SupabaseURL = dbURL
-	}
-	
-	dbProv, err := database.NewDBProvider(dbConfig)
-	if err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		
-		var ok bool
-		dbProvider, ok = dbProv.(*database.Provider)
-		if ok {
-			if err := dbProvider.Connect(ctx); err == nil {
-				logger.InfoC("database", "✓ Banco de dados conectado")
-				
-				// TENTA ADQUIRIR LOCK NO BANCO
-				if !acquireLockDB(dbProvider) {
-					logger.ErrorC("gateway", "OUTRA INSTÂNCIA JÁ ESTÁ RODANDO (lock no banco)")
-					logger.ErrorC("gateway", "Encerrando para evitar conflito...")
-					os.Exit(1)
-				}
-				
-				// Inicia manutenção do lock
-				go maintainLockDB(dbProvider)
-				defer releaseLockDB(dbProvider)
-				
-				logger.InfoC("gateway", "✓ Lock adquirido no banco de dados")
-			}
-		}
-	}
-	
-	// ... resto do código ...
-}
 	
 	// Check for --debug flag
 	args := os.Args[2:]
@@ -767,6 +728,20 @@ func gatewayCmd() {
 					dbProvider = nil
 				} else {
 					logger.InfoC("database", "✓ Banco de dados conectado")
+
+					// TENTA ADQUIRIR LOCK NO BANCO
+					if !acquireLockDB(dbProvider) {
+						logger.ErrorC("gateway", "OUTRA INSTÂNCIA JÁ ESTÁ RODANDO (lock no banco)")
+						logger.ErrorC("gateway", "Encerrando para evitar conflito...")
+						os.Exit(1)
+					}
+
+					// Inicia manutenção do lock
+					go maintainLockDB(dbProvider)
+					defer releaseLockDB(dbProvider)
+
+					logger.InfoC("gateway", "✓ Lock adquirido no banco de dados")
+
 					agentLoop.SetDBProvider(dbProvider)
 				}
 			}
