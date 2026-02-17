@@ -633,30 +633,45 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 }
 
 func gatewayCmd() {
-	// =============================================================================
-	// VERIFICAÇÃO DE LOCK - PREVINE DUPLICATAS NO RENDER
-	// =============================================================================
+	// ... código anterior ...
 	
-	// Tenta adquirir lock imediatamente
-	if !acquireLock() {
-		// Se não conseguiu lock, aguarda até 30 segundos
-		logger.InfoC("gateway", "Outra instância detectada, aguardando lock...")
-		
-		if !waitForLock(30 * time.Second) {
-			logger.ErrorC("gateway", "Não foi possível adquirir lock após 30s. Outra instância está rodando.")
-			logger.ErrorC("gateway", "Encerrando para evitar conflito com Telegram bot.")
-			os.Exit(1)
-		}
-		
-		logger.InfoC("gateway", "Lock adquirido após aguardar. Continuando inicialização...")
+	// INICIALIZAÇÃO DO BANCO DE DADOS
+	var dbProvider *database.Provider
+	dbConfig := database.DBConfig{}
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL != "" {
+		dbConfig.SupabaseURL = dbURL
 	}
 	
-	// Garante que o lock seja liberado ao final
-	defer releaseLock()
+	dbProv, err := database.NewDBProvider(dbConfig)
+	if err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		
+		var ok bool
+		dbProvider, ok = dbProv.(*database.Provider)
+		if ok {
+			if err := dbProvider.Connect(ctx); err == nil {
+				logger.InfoC("database", "✓ Banco de dados conectado")
+				
+				// TENTA ADQUIRIR LOCK NO BANCO
+				if !acquireLockDB(dbProvider) {
+					logger.ErrorC("gateway", "OUTRA INSTÂNCIA JÁ ESTÁ RODANDO (lock no banco)")
+					logger.ErrorC("gateway", "Encerrando para evitar conflito...")
+					os.Exit(1)
+				}
+				
+				// Inicia manutenção do lock
+				go maintainLockDB(dbProvider)
+				defer releaseLockDB(dbProvider)
+				
+				logger.InfoC("gateway", "✓ Lock adquirido no banco de dados")
+			}
+		}
+	}
 	
-	// =============================================================================
-	// RESTO DO CÓDIGO PERMANECE IGUAL
-	// =============================================================================
+	// ... resto do código ...
+}
 	
 	// Check for --debug flag
 	args := os.Args[2:]
