@@ -287,6 +287,30 @@ func (p *Provider) GetMessages(chatID string, limit int) ([]Message, error) {
 	return messages, nil
 }
 
+// Exec executa uma query sem retornar linhas
+func (p *Provider) Exec(query string, args ...interface{}) (sql.Result, error) {
+	if p.DB == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+	return p.DB.Exec(query, args...)
+}
+
+// QueryRow executa uma query retornando uma única linha
+func (p *Provider) QueryRow(query string, args ...interface{}) *sql.Row {
+	if p.DB == nil {
+		return nil
+	}
+	return p.DB.QueryRow(query, args...)
+}
+
+// Query executa uma query retornando múltiplas linhas
+func (p *Provider) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	if p.DB == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+	return p.DB.Query(query, args...)
+}
+
 // Close fecha conexão
 func (p *Provider) Close() error {
 	if p.DB != nil {
