@@ -5,23 +5,24 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Provider implementa DBProvider
+// Provider implementa DBProvider usando pgxpool nativo
 type Provider struct {
-	DB     *sql.DB
+	pool   *pgxpool.Pool
 	config DBConfig
 }
 
-// NewDBProvider cria provider a partir de config (usado em main.go)
+// NewDBProvider cria provider a partir de config
 func NewDBProvider(config DBConfig) (DBProvider, error) {
 	dbURL := getDatabaseURL()
 	
@@ -33,19 +34,41 @@ func NewDBProvider(config DBConfig) (DBProvider, error) {
 	maskedURL := maskPassword(dbURL)
 	fmt.Printf("[database] Conectando com: %s\n", maskedURL)
 
-	db, err := sql.Open("pgx", dbURL)
+	// Parse config com opções especiais para Supabase Pooler
+	dbConfig, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao abrir conexão: %w", err)
+		return nil, fmt.Errorf("erro ao parse config: %w", err)
 	}
 
-	// Configura pool de conexões para ambiente serverless
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetConnMaxIdleTime(2 * time.Minute)
+	// CORREÇÃO 1: Desabilita prepared statement cache (evita conflito com pooler)
+	dbConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+
+	// CORREÇÃO 2: Configurações otimizadas para serverless/Render
+	dbConfig.MaxConns = 5                    // Reduzido para evitar exaustão
+	dbConfig.MinConns = 1                    // Mantém 1 conexão mínima
+	dbConfig.MaxConnLifetime = 10 * time.Minute
+	dbConfig.MaxConnIdleTime = 5 * time.Minute
+	dbConfig.HealthCheckPeriod = 30 * time.Second
+
+	// Cria pool
+	pool, err := pgxpool.NewWithConfig(context.Background(), dbConfig)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao criar pool: %w", err)
+	}
+
+	// Testa conexão
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("erro ao ping banco: %w", err)
+	}
+
+	fmt.Printf("[database] ✅ Conectado com sucesso (pool: %d max)\n", dbConfig.MaxConns)
 
 	p := &Provider{
-		DB:     db,
+		pool:   pool,
 		config: config,
 	}
 
@@ -61,38 +84,35 @@ func NewProvider() (*Provider, error) {
 	return dbProvider.(*Provider), nil
 }
 
-// getDatabaseURL obtém a URL de conexão do banco de dados
-// Prioridade: DATABASE_URL > SUPABASE_URL > variáveis individuais
+// getDatabaseURL obtém a URL de conexão
 func getDatabaseURL() string {
-	// 1. Tenta DATABASE_URL primeiro (formato padrão do Render/Supabase)
+	// 1. DATABASE_URL direta (prioridade)
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-		// Verifica se é uma URL do Supabase e precisa de ajustes
 		return normalizeSupabaseURL(dbURL)
 	}
 
-	// 2. Tenta SUPABASE_URL (específica do Supabase)
+	// 2. SUPABASE_URL
 	if dbURL := os.Getenv("SUPABASE_URL"); dbURL != "" {
 		return normalizeSupabaseURL(dbURL)
 	}
 
-	// 3. Tenta DATABASE_POOLER_URL (alternativa)
+	// 3. DATABASE_POOLER_URL
 	if dbURL := os.Getenv("DATABASE_POOLER_URL"); dbURL != "" {
 		return dbURL
 	}
 
-	// 4. Monta a partir de variáveis individuais
+	// 4. Monta de componentes
 	return buildURLFromComponents()
 }
 
-// normalizeSupabaseURL ajusta a URL do Supabase para funcionar corretamente
+// normalizeSupabaseURL ajusta URL do Supabase
 func normalizeSupabaseURL(dbURL string) string {
 	// Se já é pooler, retorna como está
 	if strings.Contains(dbURL, "pooler.supabase.com") {
 		return dbURL
 	}
 
-	// Se é conexão direta (db.xxx.supabase.co), converte para pooler
-	// Padrão: postgresql://postgres:password@db.PROJECT_REF.supabase.co:5432/postgres
+	// Se é direta, converte para pooler (IPv4 compatível)
 	if strings.Contains(dbURL, "db.") && strings.Contains(dbURL, "supabase.co") {
 		return convertDirectToPooler(dbURL)
 	}
@@ -100,31 +120,25 @@ func normalizeSupabaseURL(dbURL string) string {
 	return dbURL
 }
 
-// convertDirectToPooler converte URL direta do Supabase para pooler
+// convertDirectToPooler converte URL direta para pooler
 func convertDirectToPooler(directURL string) string {
-	// Extrai componentes da URL usando regex
-	// postgresql://user:pass@host:port/db?params
-	
 	re := regexp.MustCompile(`postgresql://([^:]+):([^@]+)@db\.([^.]+)\.supabase\.co:(\d+)/([^?]+)(\?.*)?`)
 	matches := re.FindStringSubmatch(directURL)
 	
 	if len(matches) < 6 {
-		// Não conseguiu fazer parse, retorna original
 		return directURL
 	}
 
 	user := matches[1]
 	password := matches[2]
 	projectRef := matches[3]
-	// port := matches[4] // ignoramos, pooler usa 6543
 	database := matches[5]
 	params := matches[6]
 	if params == "" {
 		params = "?sslmode=require"
 	}
 
-	// Constrói URL do pooler de transação (IPv4 compatível)
-	// Formato: postgresql://user.project_ref:password@aws-0-region.pooler.supabase.com:6543/database
+	// Pooler de transação (porta 6543)
 	poolerURL := fmt.Sprintf(
 		"postgresql://%s.%s:%s@aws-0-us-east-1.pooler.supabase.com:6543/%s%s",
 		user, projectRef, password, database, params,
@@ -133,7 +147,7 @@ func convertDirectToPooler(directURL string) string {
 	return poolerURL
 }
 
-// buildURLFromComponents monta URL a partir de variáveis individuais
+// buildURLFromComponents monta URL de variáveis individuais
 func buildURLFromComponents() string {
 	host := getEnv("DB_HOST", "localhost")
 	port := getEnv("DB_PORT", "5432")
@@ -142,9 +156,8 @@ func buildURLFromComponents() string {
 	dbname := getEnv("DB_NAME", "postgres")
 	sslmode := getEnv("DB_SSLMODE", "require")
 
-	// Se for Supabase direto, converte para pooler
+	// Converte Supabase direto para pooler
 	if strings.Contains(host, "supabase.co") && !strings.Contains(host, "pooler") {
-		// Extrai project ref do host (db.xxx.supabase.co)
 		parts := strings.Split(host, ".")
 		if len(parts) >= 3 && parts[0] == "db" {
 			projectRef := parts[1]
@@ -161,14 +174,12 @@ func buildURLFromComponents() string {
 	)
 }
 
-// maskPassword mascara a senha em uma URL para logging
+// maskPassword mascara senha no log
 func maskPassword(dbURL string) string {
-	// Regex para encontrar senha em URL postgresql
 	re := regexp.MustCompile(`(postgresql://[^:]+):([^@]+)@`)
 	return re.ReplaceAllString(dbURL, "$1:****@")
 }
 
-// getEnv obtém variável de ambiente ou retorna valor padrão
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -176,45 +187,50 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// Connect estabelece conexão com contexto (main.go)
+// Connect verifica conexão
 func (p *Provider) Connect(ctx context.Context) error {
-	if p.DB == nil {
-		return fmt.Errorf("database not initialized")
+	if p.pool == nil {
+		return fmt.Errorf("pool not initialized")
 	}
-	return p.DB.PingContext(ctx)
+	return p.pool.Ping(ctx)
 }
 
-// Disconnect fecha conexão (main.go)
+// Disconnect fecha pool
 func (p *Provider) Disconnect() error {
-	return p.Close()
+	if p.pool != nil {
+		p.pool.Close()
+	}
+	return nil
 }
 
-// IsConnected verifica conexão
+// IsConnected verifica saúde
 func (p *Provider) IsConnected() bool {
-	if p.DB == nil {
+	if p.pool == nil {
 		return false
 	}
-	return p.DB.Ping() == nil
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return p.pool.Ping(ctx) == nil
 }
 
-// LoadSession carrega mensagens (loop.go)
+// LoadSession carrega mensagens
 func (p *Provider) LoadSession(ctx context.Context, chatID string) ([]Message, error) {
-	return p.GetMessages(chatID, 100)
+	return p.GetMessages(ctx, chatID, 100)
 }
 
-// SaveSession salva mensagens (loop.go)
+// SaveSession salva mensagens
 func (p *Provider) SaveSession(ctx context.Context, chatID string, messages []Message) error {
 	for _, msg := range messages {
 		msg.ChatID = chatID
-		if err := p.SaveMessage(&msg); err != nil {
+		if err := p.SaveMessage(ctx, &msg); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// SaveMessage salva uma mensagem
-func (p *Provider) SaveMessage(msg *Message) error {
+// SaveMessage salva mensagem (CORRIGIDO: aceita contexto)
+func (p *Provider) SaveMessage(ctx context.Context, msg *Message) error {
 	if msg.ID == "" {
 		msg.ID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
@@ -223,7 +239,7 @@ func (p *Provider) SaveMessage(msg *Message) error {
 	}
 	
 	// Cria tabela se não existir
-	_, _ = p.DB.Exec(`
+	_, _ = p.pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS messages (
 			id TEXT PRIMARY KEY,
 			role TEXT,
@@ -236,7 +252,7 @@ func (p *Provider) SaveMessage(msg *Message) error {
 		)
 	`)
 
-	_, err := p.DB.Exec(`
+	_, err := p.pool.Exec(ctx, `
 		INSERT INTO messages (id, role, content, sender_id, chat_id, channel, timestamp)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (id) DO UPDATE SET
@@ -244,13 +260,14 @@ func (p *Provider) SaveMessage(msg *Message) error {
 			content = EXCLUDED.content,
 			timestamp = EXCLUDED.timestamp
 	`, msg.ID, msg.Role, msg.Content, msg.SenderID, msg.ChatID, msg.Channel, msg.Timestamp)
+	
 	return err
 }
 
-// GetMessages recupera mensagens
-func (p *Provider) GetMessages(chatID string, limit int) ([]Message, error) {
-	// Garante que tabela existe
-	_, _ = p.DB.Exec(`
+// GetMessages recupera mensagens (CORRIGIDO: aceita contexto)
+func (p *Provider) GetMessages(ctx context.Context, chatID string, limit int) ([]Message, error) {
+	// Garante tabela
+	_, _ = p.pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS messages (
 			id TEXT PRIMARY KEY,
 			role TEXT,
@@ -263,13 +280,14 @@ func (p *Provider) GetMessages(chatID string, limit int) ([]Message, error) {
 		)
 	`)
 
-	rows, err := p.DB.Query(`
+	rows, err := p.pool.Query(ctx, `
 		SELECT id, role, content, sender_id, chat_id, channel, timestamp, created_at
 		FROM messages 
 		WHERE chat_id = $1 
 		ORDER BY timestamp ASC 
 		LIMIT $2
 	`, chatID, limit)
+	
 	if err != nil {
 		return nil, err
 	}
@@ -284,37 +302,35 @@ func (p *Provider) GetMessages(chatID string, limit int) ([]Message, error) {
 		}
 		messages = append(messages, m)
 	}
-	return messages, nil
+	
+	return messages, rows.Err()
 }
 
-// Exec executa uma query sem retornar linhas
-func (p *Provider) Exec(query string, args ...interface{}) (sql.Result, error) {
-	if p.DB == nil {
-		return nil, fmt.Errorf("database not initialized")
+// Exec executa query
+func (p *Provider) Exec(ctx context.Context, query string, args ...interface{}) (pgconn.CommandTag, error) {
+	if p.pool == nil {
+		return pgconn.CommandTag{}, fmt.Errorf("pool not initialized")
 	}
-	return p.DB.Exec(query, args...)
+	return p.pool.Exec(ctx, query, args...)
 }
 
-// QueryRow executa uma query retornando uma única linha
-func (p *Provider) QueryRow(query string, args ...interface{}) *sql.Row {
-	if p.DB == nil {
+// QueryRow executa query single row
+func (p *Provider) QueryRow(ctx context.Context, query string, args ...interface{}) pgx.Row {
+	if p.pool == nil {
 		return nil
 	}
-	return p.DB.QueryRow(query, args...)
+	return p.pool.QueryRow(ctx, query, args...)
 }
 
-// Query executa uma query retornando múltiplas linhas
-func (p *Provider) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	if p.DB == nil {
-		return nil, fmt.Errorf("database not initialized")
+// Query executa query multi-row
+func (p *Provider) Query(ctx context.Context, query string, args ...interface{}) (pgx.Rows, error) {
+	if p.pool == nil {
+		return nil, fmt.Errorf("pool not initialized")
 	}
-	return p.DB.Query(query, args...)
+	return p.pool.Query(ctx, query, args...)
 }
 
-// Close fecha conexão
+// Close fecha pool
 func (p *Provider) Close() error {
-	if p.DB != nil {
-		return p.DB.Close()
-	}
-	return nil
+	return p.Disconnect()
 }
