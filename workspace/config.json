@@ -3,11 +3,14 @@
     "defaults": {
       "workspace": "/opt/render/project/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "provider": "gemini",
-      "model": "gemini-1.5-flash",
+      "provider": "openrouter",
+      "model": "anthropic/claude-3.5-sonnet",
       "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 20
+      "max_tool_iterations": 20,
+      "reasoning_enabled": true,
+      "use_emojis": true,
+      "personality_tone": "friendly"
     }
   },
   "channels": {
@@ -15,15 +18,91 @@
       "enabled": true,
       "token": "",
       "proxy": "",
+      "allow_from": [],
+      "polling_interval": 1,
+      "retry_delay": 5,
+      "max_retries": 3
+    },
+    "discord": {
+      "enabled": false,
+      "token": "",
+      "allow_from": []
+    },
+    "slack": {
+      "enabled": false,
+      "token": "",
       "allow_from": []
     }
   },
   "providers": {
+    "openrouter": {
+      "api_key": "",
+      "api_base": "https://openrouter.ai/api/v1",
+      "model": "anthropic/claude-3.5-sonnet",
+      "fallback_models": [
+        "anthropic/claude-3-haiku",
+        "google/gemini-1.5-flash",
+        "meta-llama/llama-3.1-70b-instruct"
+      ],
+      "timeout": 60,
+      "max_retries": 3
+    },
+    "anthropic": {
+      "api_key": "",
+      "api_base": "https://api.anthropic.com",
+      "model": "claude-3-5-sonnet-20241022",
+      "timeout": 60,
+      "max_retries": 3
+    },
+    "openai": {
+      "api_key": "",
+      "api_base": "https://api.openai.com/v1",
+      "model": "gpt-4o",
+      "timeout": 60,
+      "max_retries": 3
+    },
     "gemini": {
-      "api_key": "AIzaSyC1wlGdplps2qlZLvene7lPi2BL_4pc9_s",
+      "api_key": "",
       "api_base": "https://generativelanguage.googleapis.com/v1beta",
-      "model": "gemini-1.5-flash"
+      "model": "gemini-1.5-flash",
+      "timeout": 60,
+      "max_retries": 3
+    },
+    "groq": {
+      "api_key": "",
+      "api_base": "https://api.groq.com/openai/v1",
+      "model": "llama-3.1-70b-versatile",
+      "timeout": 30,
+      "max_retries": 2
+    },
+    "zhipu": {
+      "api_key": "",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4",
+      "model": "glm-4",
+      "timeout": 60,
+      "max_retries": 3
+    },
+    "vllm": {
+      "api_base": "",
+      "model": "",
+      "timeout": 60,
+      "max_retries": 3
     }
+  },
+  "llm": {
+    "primary_provider": "openrouter",
+    "fallback_providers": ["gemini", "groq"],
+    "auto_fallback": true,
+    "cache_responses": true,
+    "cache_ttl_minutes": 30
+  },
+  "database": {
+    "enabled": true,
+    "connection_timeout": 15,
+    "max_connections": 5,
+    "min_connections": 1,
+    "connection_lifetime_minutes": 10,
+    "machine_id": "picoclaw-main"
   },
   "gateway": {
     "host": "0.0.0.0",
@@ -32,5 +111,10 @@
   "heartbeat": {
     "enabled": false,
     "interval": 30
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "output": "stdout"
   }
 }
