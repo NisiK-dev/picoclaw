@@ -2,6 +2,12 @@
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot  
 // License: MIT
 //
+// CORREÇÕES APLICADAS:
+// - Sistema de raciocínio antes de usar LLMs (ReasoningEngine)
+// - Respostas mais humanas com personalidade adaptativa
+// - Fallback para múltiplos provedores de LLM
+// - Cache de respostas para perguntas frequentes
+//
 // Copyright (c) 2026 PicoClaw contributors
 
 package agent
@@ -12,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,9 +36,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// AgentLoop gerencia o ciclo de vida do agente
 type AgentLoop struct {
 	bus            *bus.MessageBus
 	provider       providers.LLMProvider
+	providers      []providers.LLMProvider // Múltiplos provedores para fallback
 	workspace      string
 	model          string
 	contextWindow  int // Maximum context window size in tokens
@@ -42,7 +51,10 @@ type AgentLoop struct {
 	tools          *tools.ToolRegistry
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
-	dbProvider     database.DBProvider // NOVO: Banco de dados para persistência
+	dbProvider     database.DBProvider
+	reasoning      *ReasoningEngine // NOVO: Motor de raciocínio
+	responseCache  *ResponseCache   // NOVO: Cache de respostas
+	personality    *Personality     // NOVO: Personalidade adaptativa
 }
 
 // processOptions configures how a message is processed
@@ -55,6 +67,53 @@ type processOptions struct {
 	EnableSummary   bool   // Whether to trigger summarization
 	SendResponse    bool   // Whether to send response via bus
 	NoHistory       bool   // If true, don't load/save session history (for heartbeat)
+}
+
+// ReasoningEngine implementa raciocínio antes de chamar LLMs
+type ReasoningEngine struct {
+	enabled         bool
+	quickResponses  map[string]QuickResponse
+	patternMatchers []PatternMatcher
+}
+
+// QuickResponse resposta rápida sem chamar LLM
+type QuickResponse struct {
+	Pattern     string
+	Response    string
+	Confidence  float64
+	NeedsLLM    bool // Se true, ainda precisa validar com LLM
+}
+
+// PatternMatcher identifica padrões na mensagem
+type PatternMatcher struct {
+	Pattern     *regexp.Regexp
+	Type        string
+	Confidence  float64
+}
+
+// ResponseCache cache de respostas frequentes
+type ResponseCache struct {
+	mu       sync.RWMutex
+	entries  map[string]CacheEntry
+	maxSize  int
+	ttl      time.Duration
+}
+
+// CacheEntry entrada no cache
+type CacheEntry struct {
+	Response   string
+	Timestamp  time.Time
+	HitCount   int
+}
+
+// Personality personalidade adaptativa do bot
+type Personality struct {
+	Name        string
+	Tone        string // "friendly", "professional", "casual", "enthusiastic"
+	EmojiStyle  string // "minimal", "moderate", "expressive"
+	UseEmojis   bool
+	Greeting    string
+	Farewell    string
 }
 
 // createToolRegistry creates a tool registry with common tools.
@@ -103,6 +162,271 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	return registry
 }
 
+// NewReasoningEngine cria um novo motor de raciocínio
+func NewReasoningEngine() *ReasoningEngine {
+	re := &ReasoningEngine{
+		enabled:        true,
+		quickResponses: make(map[string]QuickResponse),
+		patternMatchers: []PatternMatcher{
+			{regexp.MustCompile(`(?i)^oi$|^ol[aá]$|^eai$|^hey$|^hi$|^hello$`), "greeting", 0.95},
+			{regexp.MustCompile(`(?i)^tchau$|^adeus$|^at[eé] logo$|^bye$|^see ya$`), "farewell", 0.95},
+			{regexp.MustCompile(`(?i)^obrigad[oa]|^valeu|^thanks|^thank you`), "gratitude", 0.90},
+			{regexp.MustCompile(`(?i)^bom dia$|^boa tarde$|^boa noite$`), "time_greeting", 0.95},
+			{regexp.MustCompile(`(?i)^como voc[eê] est[aá]|^tudo bem|^how are you`), "how_are_you", 0.90},
+			{regexp.MustCompile(`(?i)^quem [eé] voc[eê]|^o que [eé] voc[eê]|^what are you`), "who_are_you", 0.90},
+			{regexp.MustCompile(`(?i)^ajuda|^help|^socorro|^me ajude`), "help_request", 0.85},
+			{regexp.MustCompile(`(?i)^hora|^que horas|^time`), "time_request", 0.85},
+			{regexp.MustCompile(`(?i)^data|^que dia|^date`), "date_request", 0.85},
+		},
+	}
+
+	// Respostas rápidas predefinidas (em português para corresponder ao usuário)
+	re.quickResponses["greeting"] = QuickResponse{
+		Pattern:    "greeting",
+		Response:   "",
+		Confidence: 0.95,
+		NeedsLLM:   true, // Gera saudação personalizada via LLM
+	}
+	re.quickResponses["farewell"] = QuickResponse{
+		Pattern:    "farewell",
+		Response:   "",
+		Confidence: 0.95,
+		NeedsLLM:   true,
+	}
+	re.quickResponses["gratitude"] = QuickResponse{
+		Pattern:    "gratitude",
+		Response:   "",
+		Confidence: 0.90,
+		NeedsLLM:   true,
+	}
+	re.quickResponses["how_are_you"] = QuickResponse{
+		Pattern:    "how_are_you",
+		Response:   "",
+		Confidence: 0.90,
+		NeedsLLM:   true,
+	}
+	re.quickResponses["who_are_you"] = QuickResponse{
+		Pattern:    "who_are_you",
+		Response:   "",
+		Confidence: 0.90,
+		NeedsLLM:   true,
+	}
+	re.quickResponses["time_request"] = QuickResponse{
+		Pattern:    "time_request",
+		Response:   "",
+		Confidence: 0.85,
+		NeedsLLM:   true,
+	}
+	re.quickResponses["date_request"] = QuickResponse{
+		Pattern:    "date_request",
+		Response:   "",
+		Confidence: 0.85,
+		NeedsLLM:   true,
+	}
+	re.quickResponses["help_request"] = QuickResponse{
+		Pattern:    "help_request",
+		Response:   "",
+		Confidence: 0.85,
+		NeedsLLM:   true,
+	}
+
+	return re
+}
+
+// Analyze analisa a mensagem e retorna o tipo detectado
+func (re *ReasoningEngine) Analyze(message string) (string, float64) {
+	if !re.enabled {
+		return "", 0
+	}
+
+	for _, matcher := range re.patternMatchers {
+		if matcher.Pattern.MatchString(message) {
+			return matcher.Type, matcher.Confidence
+		}
+	}
+
+	return "complex", 0.5 // Necessita processamento completo
+}
+
+// NewResponseCache cria um novo cache de respostas
+func NewResponseCache() *ResponseCache {
+	return &ResponseCache{
+		entries: make(map[string]CacheEntry),
+		maxSize: 100,
+		ttl:     30 * time.Minute,
+	}
+}
+
+// Get busca uma resposta no cache
+func (rc *ResponseCache) Get(key string) (string, bool) {
+	rc.mu.RLock()
+	defer rc.mu.RUnlock()
+
+	entry, exists := rc.entries[key]
+	if !exists {
+		return "", false
+	}
+
+	// Verifica se expirou
+	if time.Since(entry.Timestamp) > rc.ttl {
+		return "", false
+	}
+
+	return entry.Response, true
+}
+
+// Set adiciona uma resposta ao cache
+func (rc *ResponseCache) Set(key, response string) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	// Limpa entradas antigas se necessário
+	if len(rc.entries) >= rc.maxSize {
+		rc.cleanup()
+	}
+
+	rc.entries[key] = CacheEntry{
+		Response:  response,
+		Timestamp: time.Now(),
+		HitCount:  1,
+	}
+}
+
+// cleanup remove entradas expiradas ou menos usadas
+func (rc *ResponseCache) cleanup() {
+	now := time.Now()
+	for key, entry := range rc.entries {
+		if now.Sub(entry.Timestamp) > rc.ttl {
+			delete(rc.entries, key)
+		}
+	}
+}
+
+// NewPersonality cria uma nova personalidade
+func NewPersonality() *Personality {
+	return &Personality{
+		Name:       "Pico",
+		Tone:       "friendly",
+		EmojiStyle: "moderate",
+		UseEmojis:  true,
+		Greeting:   "Olá! 👋",
+		Farewell:   "Até logo! 👋",
+	}
+}
+
+// GenerateGreeting gera uma saudação personalizada
+func (p *Personality) GenerateGreeting() string {
+	hour := time.Now().Hour()
+	var greeting string
+
+	switch {
+	case hour >= 5 && hour < 12:
+		greeting = "Bom dia"
+	case hour >= 12 && hour < 18:
+		greeting = "Boa tarde"
+	default:
+		greeting = "Boa noite"
+	}
+
+	if p.UseEmojis {
+		greetings := []string{
+			fmt.Sprintf("%s! ☀️ Como posso ajudar você hoje?", greeting),
+			fmt.Sprintf("%s! 🌟 O que posso fazer por você?", greeting),
+			fmt.Sprintf("Oi! %s! 👋 Pronto para ajudar!", greeting),
+		}
+		return greetings[time.Now().Second()%len(greetings)]
+	}
+
+	return fmt.Sprintf("%s! Como posso ajudar?", greeting)
+}
+
+// GenerateFarewell gera uma despedida personalizada
+func (p *Personality) GenerateFarewell() string {
+	if p.UseEmojis {
+		farewells := []string{
+			"Até logo! 👋 Foi um prazer conversar com você!",
+			"Tchau! 🌟 Volte sempre que precisar!",
+			"Até mais! 😊 Estou aqui quando precisar!",
+		}
+		return farewells[time.Now().Second()%len(farewells)]
+	}
+	return "Até logo! Volte sempre."
+}
+
+// GenerateGratitudeResponse gera resposta para agradecimento
+func (p *Personality) GenerateGratitudeResponse() string {
+	if p.UseEmojis {
+		responses := []string{
+			"De nada! 😊 Fico feliz em poder ajudar!",
+			"Por nada! 🌟 É um prazer ajudar!",
+			"Disponha sempre! 👍 Que bom que pude ser útil!",
+		}
+		return responses[time.Now().Second()%len(responses)]
+	}
+	return "De nada! Fico feliz em ajudar."
+}
+
+// GenerateHowAreYouResponse gera resposta para "como vai"
+func (p *Personality) GenerateHowAreYouResponse() string {
+	if p.UseEmojis {
+		return "Estou ótimo! 🤖 Funcionando a todo vapor e pronto para ajudar! E você, como está?"
+	}
+	return "Estou bem, obrigado por perguntar! Pronto para ajudar. E você?"
+}
+
+// GenerateWhoAreYouResponse gera resposta para "quem é você"
+func (p *Personality) GenerateWhoAreYouResponse() string {
+	if p.UseEmojis {
+		return fmt.Sprintf("Sou %s! 🦞🤖 Um assistente de IA criado para ajudar você com diversas tarefas. Posso responder perguntas, ajudar com código, pesquisar na web e muito mais! Como posso ajudar?", p.Name)
+	}
+	return fmt.Sprintf("Sou %s, um assistente de IA pronto para ajudar você com diversas tarefas.", p.Name)
+}
+
+// GenerateTimeResponse gera resposta com hora atual
+func (p *Personality) GenerateTimeResponse() string {
+	now := time.Now()
+	timeStr := now.Format("15:04")
+	if p.UseEmojis {
+		return fmt.Sprintf("São %s ⏰ (horário local)", timeStr)
+	}
+	return fmt.Sprintf("São %s (horário local)", timeStr)
+}
+
+// GenerateDateResponse gera resposta com data atual
+func (p *Personality) GenerateDateResponse() string {
+	now := time.Now()
+	dateStr := now.Format("02/01/2006")
+	weekday := []string{"Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"}[now.Weekday()]
+	
+	if p.UseEmojis {
+		return fmt.Sprintf("Hoje é %s, %s 📅", weekday, dateStr)
+	}
+	return fmt.Sprintf("Hoje é %s, %s", weekday, dateStr)
+}
+
+// GenerateHelpResponse gera resposta para pedido de ajuda
+func (p *Personality) GenerateHelpResponse() string {
+	if p.UseEmojis {
+		return `Claro! 🆘 Aqui estão algumas coisas que posso fazer:
+
+💬 *Conversar* - Bate-papo natural sobre qualquer assunto
+🔍 *Pesquisar* - Buscar informações na web
+💻 *Código* - Ajuda com programação em várias linguagens
+📁 *Arquivos* - Ler, escrever e editar arquivos
+⚙️ *Ferramentas* - Usar diversas ferramentas disponíveis
+
+O que você gostaria de fazer? 😊`
+	}
+	return `Posso ajudar com:
+- Conversas e perguntas gerais
+- Pesquisa na web
+- Programação e código
+- Manipulação de arquivos
+- Uso de ferramentas diversas
+
+Como posso ajudar?`
+}
+
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	workspace := cfg.WorkspacePath()
 	os.MkdirAll(workspace, 0755)
@@ -138,16 +462,20 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	return &AgentLoop{
 		bus:            msgBus,
 		provider:       provider,
+		providers:      []providers.LLMProvider{provider}, // Inicializa com provider principal
 		workspace:      workspace,
 		model:          cfg.Agents.Defaults.Model,
-		contextWindow:  cfg.Agents.Defaults.MaxTokens, // Restore context window for summarization
+		contextWindow:  cfg.Agents.Defaults.MaxTokens,
 		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
 		sessions:       sessionsManager,
 		state:          stateManager,
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
 		summarizing:    sync.Map{},
-		dbProvider:     nil, // Inicializado posteriormente via SetDBProvider
+		dbProvider:     nil,
+		reasoning:      NewReasoningEngine(),
+		responseCache:  NewResponseCache(),
+		personality:    NewPersonality(),
 	}
 }
 
@@ -160,6 +488,19 @@ func (al *AgentLoop) SetDBProvider(db database.DBProvider) {
 // GetDBProvider retorna o provider de banco de dados
 func (al *AgentLoop) GetDBProvider() database.DBProvider {
 	return al.dbProvider
+}
+
+// AddProvider adiciona um provedor de LLM adicional (para fallback)
+func (al *AgentLoop) AddProvider(provider providers.LLMProvider) {
+	al.providers = append(al.providers, provider)
+	logger.InfoC("agent", fmt.Sprintf("Provedor adicional adicionado. Total: %d", len(al.providers)))
+}
+
+// SetPersonality define a personalidade do bot
+func (al *AgentLoop) SetPersonality(tone string, useEmojis bool) {
+	al.personality.Tone = tone
+	al.personality.UseEmojis = useEmojis
+	logger.InfoC("agent", fmt.Sprintf("Personalidade atualizada: tone=%s, emojis=%v", tone, useEmojis))
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
@@ -244,14 +585,14 @@ func (al *AgentLoop) ProcessDirectWithChannel(ctx context.Context, content, sess
 // Each heartbeat is independent and doesn't accumulate context.
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
 	return al.runAgentLoop(ctx, processOptions{
-		SessionKey:      fmt.Sprintf("heartbeat:%d", time.Now().Unix()), // CORREÇÃO: session key única por heartbeat
+		SessionKey:      fmt.Sprintf("heartbeat:%d", time.Now().Unix()),
 		Channel:         channel,
 		ChatID:          chatID,
 		UserMessage:     content,
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   false,
 		SendResponse:    false,
-		NoHistory:       true, // Don't load/save session history for heartbeat
+		NoHistory:       true,
 	})
 }
 
@@ -259,7 +600,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Add message preview to log (show full content for error messages)
 	var logContent string
 	if strings.Contains(msg.Content, "Error:") || strings.Contains(msg.Content, "error") {
-		logContent = msg.Content // Full content for errors
+		logContent = msg.Content
 	} else {
 		logContent = utils.Truncate(msg.Content, 80)
 	}
@@ -305,15 +646,13 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	if idx := strings.Index(msg.ChatID, ":"); idx > 0 {
 		originChannel = msg.ChatID[:idx]
 	} else {
-		// Fallback
 		originChannel = "cli"
 	}
 
 	// Extract subagent result from message content
-	// Format: "Task 'label' completed.\n\nResult:\n<actual content>"
 	content := msg.Content
 	if idx := strings.Index(content, "Result:\n"); idx >= 0 {
-		content = content[idx+8:] // Extract just the result part
+		content = content[idx+8:]
 	}
 
 	// Skip internal channels - only log, don't send to user
@@ -327,8 +666,6 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		return "", nil
 	}
 
-	// Agent acts as dispatcher only - subagent handles user interaction via message tool
-	// Don't forward result here, subagent should use message tool to communicate with user
 	logger.InfoCF("agent", "Subagent completed",
 		map[string]interface{}{
 			"sender_id":   msg.SenderID,
@@ -336,16 +673,14 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			"content_len": len(content),
 		})
 
-	// Agent only logs, does not respond to user
 	return "", nil
 }
 
 // runAgentLoop is the core message processing logic.
-// It handles context building, LLM calls, tool execution, and response handling.
+// CORREÇÃO: Agora inclui raciocínio antes de chamar LLMs
 func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (string, error) {
 	// 0. Record last channel for heartbeat notifications (skip internal channels)
 	if opts.Channel != "" && opts.ChatID != "" {
-		// Don't record internal channels (cli, system, subagent)
 		if !constants.IsInternalChannel(opts.Channel) {
 			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
 			if err := al.RecordLastChannel(channelKey); err != nil {
@@ -354,17 +689,75 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		}
 	}
 
-	// 1. Update tool contexts
+	// ============================================
+	// 1. SISTEMA DE RACIOCÍNIO (NOVO)
+	// ============================================
+	// Analisa a mensagem antes de processar
+	messageType, confidence := al.reasoning.Analyze(opts.UserMessage)
+	
+	logger.DebugCF("agent", "Raciocínio aplicado",
+		map[string]interface{}{
+			"message_type": messageType,
+			"confidence":   confidence,
+		})
+
+	// Verifica cache primeiro
+	cacheKey := fmt.Sprintf("%s:%s", messageType, utils.HashString(opts.UserMessage))
+	if cachedResponse, found := al.responseCache.Get(cacheKey); found && messageType != "complex" {
+		logger.InfoC("agent", "Resposta encontrada no cache")
+		return cachedResponse, nil
+	}
+
+	// Respostas rápidas para padrões comuns (sem chamar LLM)
+	var quickResponse string
+	switch messageType {
+	case "greeting":
+		quickResponse = al.personality.GenerateGreeting()
+	case "farewell":
+		quickResponse = al.personality.GenerateFarewell()
+	case "gratitude":
+		quickResponse = al.personality.GenerateGratitudeResponse()
+	case "how_are_you":
+		quickResponse = al.personality.GenerateHowAreYouResponse()
+	case "who_are_you":
+		quickResponse = al.personality.GenerateWhoAreYouResponse()
+	case "time_request":
+		quickResponse = al.personality.GenerateTimeResponse()
+	case "date_request":
+		quickResponse = al.personality.GenerateDateResponse()
+	case "help_request":
+		quickResponse = al.personality.GenerateHelpResponse()
+	}
+
+	// Se temos uma resposta rápida e confiança é alta, retorna diretamente
+	if quickResponse != "" && confidence >= 0.85 && messageType != "complex" {
+		logger.InfoC("agent", fmt.Sprintf("Resposta rápida para: %s", messageType))
+		
+		// Salva no cache
+		al.responseCache.Set(cacheKey, quickResponse)
+		
+		// Salva no histórico se necessário
+		if !opts.NoHistory {
+			al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+			al.sessions.AddMessage(opts.SessionKey, "assistant", quickResponse)
+			al.sessions.Save(opts.SessionKey)
+			al.saveMessageToDB(ctx, opts.SessionKey, "user", opts.UserMessage)
+			al.saveMessageToDB(ctx, opts.SessionKey, "assistant", quickResponse)
+		}
+		
+		return quickResponse, nil
+	}
+
+	// ============================================
+	// 2. PROCESSAMENTO NORMAL COM LLM
+	// ============================================
 	al.updateToolContexts(opts.Channel, opts.ChatID)
 
-	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message
 	var summary string
 	if !opts.NoHistory {
-		// Tenta carregar do banco de dados primeiro
 		history = al.loadSessionFromDB(ctx, opts.SessionKey)
 		if history == nil {
-			// Fallback para storage local
 			history = al.sessions.GetHistory(opts.SessionKey)
 		}
 		summary = al.sessions.GetSummary(opts.SessionKey)
@@ -378,43 +771,40 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		opts.ChatID,
 	)
 
-	// 3. Save user message to session (local e DB) - APENAS se NoHistory for false
-	// CORREÇÃO: Não salva heartbeat no banco para evitar poluir o histórico
+	// Save user message to session
 	if !opts.NoHistory {
 		al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 		al.saveMessageToDB(ctx, opts.SessionKey, "user", opts.UserMessage)
 	}
 
-	// 4. Run LLM iteration loop
+	// Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, messages, opts)
 	if err != nil {
 		return "", err
 	}
 
-	// If last tool had ForUser content and we already sent it, we might not need to send final response
-	// This is controlled by the tool's Silent flag and ForUser content
-
-	// 5. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
 	}
 
-	// 6. Save final assistant message to session (local e DB) - APENAS se NoHistory for false
-	// CORREÇÃO: Não salva heartbeat no banco para evitar poluir o histórico
+	// Save final assistant message to session
 	if !opts.NoHistory {
 		al.sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 		al.saveMessageToDB(ctx, opts.SessionKey, "assistant", finalContent)
 		al.sessions.Save(opts.SessionKey)
 		al.saveSessionToDB(ctx, opts.SessionKey)
 
-		// 7. Optional: summarization - APENAS se NoHistory for false
 		if opts.EnableSummary {
 			al.maybeSummarize(opts.SessionKey)
 		}
 	}
 
-	// 8. Optional: send response via bus
-	// FIX: Não envia se for formato de tool call (evita mostrar código interno ao usuário)
+	// Save to cache for future use
+	if messageType != "complex" && len(finalContent) < 500 {
+		al.responseCache.Set(cacheKey, finalContent)
+	}
+
+	// Optional: send response via bus
 	if opts.SendResponse && !isToolCallFormat(finalContent) {
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: opts.Channel,
@@ -423,7 +813,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		})
 	}
 
-	// 9. Log response
+	// Log response
 	responsePreview := utils.Truncate(finalContent, 120)
 	logger.InfoCF("agent", fmt.Sprintf("Response: %s", responsePreview),
 		map[string]interface{}{
@@ -447,7 +837,6 @@ func (al *AgentLoop) loadSessionFromDB(ctx context.Context, sessionKey string) [
 		return nil
 	}
 
-	// Converte []database.Message para []providers.Message
 	var result []providers.Message
 	for _, msg := range messages {
 		result = append(result, providers.Message{
@@ -466,15 +855,12 @@ func (al *AgentLoop) saveMessageToDB(ctx context.Context, sessionKey, role, cont
 		return
 	}
 
-	// CORREÇÃO: Não salva mensagens de heartbeat (session key começa com "heartbeat:")
 	if strings.HasPrefix(sessionKey, "heartbeat:") {
 		return
 	}
 
-	// Carrega histórico atual
 	messages, _ := al.dbProvider.LoadSession(ctx, sessionKey)
 	
-	// Adiciona nova mensagem
 	messages = append(messages, database.Message{
 		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
 		Role:      role,
@@ -482,7 +868,6 @@ func (al *AgentLoop) saveMessageToDB(ctx context.Context, sessionKey, role, cont
 		CreatedAt: time.Now(),
 	})
 
-	// Salva de volta
 	if err := al.dbProvider.SaveSession(ctx, sessionKey, messages); err != nil {
 		logger.WarnC("database", "Falha ao salvar mensagem no DB: "+err.Error())
 	}
@@ -494,12 +879,10 @@ func (al *AgentLoop) saveSessionToDB(ctx context.Context, sessionKey string) {
 		return
 	}
 
-	// CORREÇÃO: Não salva sessões de heartbeat (session key começa com "heartbeat:")
 	if strings.HasPrefix(sessionKey, "heartbeat:") {
 		return
 	}
 
-	// Converte histórico local para formato do DB
 	localHistory := al.sessions.GetHistory(sessionKey)
 	var messages []database.Message
 	for _, msg := range localHistory {
@@ -519,7 +902,7 @@ func (al *AgentLoop) saveSessionToDB(ctx context.Context, sessionKey string) {
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
-// Returns the final content, iteration count, and any error.
+// CORREÇÃO: Agora suporta fallback para múltiplos provedores
 func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.Message, opts processOptions) (string, int, error) {
 	iteration := 0
 	var finalContent string
@@ -539,31 +922,37 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",
 			map[string]interface{}{
-				"iteration":         iteration,
-				"model":             al.model,
-				"messages_count":    len(messages),
-				"tools_count":       len(providerToolDefs),
-				"max_tokens":        8192,
-				"temperature":       0.7,
-				"system_prompt_len": len(messages[0].Content),
+				"iteration":      iteration,
+				"model":          al.model,
+				"messages_count": len(messages),
+				"tools_count":    len(providerToolDefs),
+				"max_tokens":     8192,
+				"temperature":    0.7,
 			})
 
-		// Log full messages (detailed)
-		logger.DebugCF("agent", "Full LLM request",
-			map[string]interface{}{
-				"iteration":     iteration,
-				"messages_json": formatMessagesForLog(messages),
-				"tools_json":    formatToolsForLog(providerToolDefs),
+		// Call LLM com fallback para múltiplos provedores
+		var response *providers.LLMResponse
+		var err error
+		
+		for i, provider := range al.providers {
+			if i > 0 {
+				logger.WarnC("agent", fmt.Sprintf("Tentando provedor fallback %d...", i+1))
+			}
+			
+			response, err = provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
+				"max_tokens":  8192,
+				"temperature": 0.7,
 			})
-
-		// Call LLM
-		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
-			"max_tokens":  8192,
-			"temperature": 0.7,
-		})
+			
+			if err == nil {
+				break // Sucesso, sai do loop
+			}
+			
+			logger.ErrorC("agent", fmt.Sprintf("Provedor %d falhou: %v", i+1, err))
+		}
 
 		if err != nil {
-			logger.ErrorCF("agent", "LLM call failed",
+			logger.ErrorCF("agent", "Todos os provedores falharam",
 				map[string]interface{}{
 					"iteration": iteration,
 					"error":     err.Error(),
@@ -612,14 +1001,13 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 		}
 		messages = append(messages, assistantMsg)
 
-		// Save assistant message with tool calls to session (apenas se não for heartbeat)
+		// Save assistant message with tool calls to session
 		if !opts.NoHistory {
 			al.sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 		}
 
 		// Execute tool calls
 		for _, tc := range response.ToolCalls {
-			// Log tool call with arguments preview
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
 			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
@@ -628,15 +1016,9 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 					"iteration": iteration,
 				})
 
-			// Create async callback for tools that implement AsyncTool
-			// NOTE: Following openclaw's design, async tools do NOT send results directly to users.
-			// Instead, they notify the agent via PublishInbound, and the agent decides
-			// whether to forward the result to the user (in processSystemMessage).
 			asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
-				// Log the async completion but don't send directly to user
-				// The agent will handle user notification via processSystemMessage
 				if !result.Silent && result.ForUser != "" {
-					logger.InfoCF("agent", "Async tool completed, agent will handle notification",
+					logger.InfoCF("agent", "Async tool completed",
 						map[string]interface{}{
 							"tool":        tc.Name,
 							"content_len": len(result.ForUser),
@@ -673,7 +1055,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 			}
 			messages = append(messages, toolResultMsg)
 
-			// Save tool result message to session (apenas se não for heartbeat)
+			// Save tool result message to session
 			if !opts.NoHistory {
 				al.sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 			}
@@ -685,7 +1067,6 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 
 // updateToolContexts updates the context for tools that need channel/chatID info.
 func (al *AgentLoop) updateToolContexts(channel, chatID string) {
-	// Use ContextualTool interface instead of type assertions
 	if tool, ok := al.tools.Get("message"); ok {
 		if mt, ok := tool.(tools.ContextualTool); ok {
 			mt.SetContext(channel, chatID)
@@ -705,7 +1086,6 @@ func (al *AgentLoop) updateToolContexts(channel, chatID string) {
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
 func (al *AgentLoop) maybeSummarize(sessionKey string) {
-	// CORREÇÃO: Não resume sessões de heartbeat
 	if strings.HasPrefix(sessionKey, "heartbeat:") {
 		return
 	}
@@ -729,10 +1109,10 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	info := make(map[string]interface{})
 
 	// Tools info
-	tools := al.tools.List()
+	toolsList := al.tools.List()
 	info["tools"] = map[string]interface{}{
-		"count": len(tools),
-		"names": tools,
+		"count": len(toolsList),
+		"names": toolsList,
 	}
 
 	// Skills info
@@ -744,6 +1124,10 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	} else {
 		info["database"] = "not connected"
 	}
+
+	// Reasoning info
+	info["reasoning"] = al.reasoning.enabled
+	info["personality"] = al.personality.Name
 
 	return info
 }
@@ -801,7 +1185,6 @@ func formatToolsForLog(tools []providers.ToolDefinition) string {
 
 // summarizeSession summarizes the conversation history for a session.
 func (al *AgentLoop) summarizeSession(sessionKey string) {
-	// CORREÇÃO: Não resume sessões de heartbeat
 	if strings.HasPrefix(sessionKey, "heartbeat:") {
 		return
 	}
@@ -812,15 +1195,12 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 	history := al.sessions.GetHistory(sessionKey)
 	summary := al.sessions.GetSummary(sessionKey)
 
-	// Keep last 4 messages for continuity
 	if len(history) <= 4 {
 		return
 	}
 
 	toSummarize := history[:len(history)-4]
 
-	// Oversized Message Guard
-	// Skip messages larger than 50% of context window to prevent summarizer overflow
 	maxMessageTokens := al.contextWindow / 2
 	validMessages := make([]providers.Message, 0)
 	omitted := false
@@ -829,7 +1209,6 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 		if m.Role != "user" && m.Role != "assistant" {
 			continue
 		}
-		// Estimate tokens for this message
 		msgTokens := len(m.Content) / 4
 		if msgTokens > maxMessageTokens {
 			omitted = true
@@ -842,8 +1221,6 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 		return
 	}
 
-	// Multi-Part Summarization
-	// Split into two parts if history is significant
 	var finalSummary string
 	if len(validMessages) > 10 {
 		mid := len(validMessages) / 2
@@ -853,7 +1230,6 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 		s1, _ := al.summarizeBatch(ctx, part1, "")
 		s2, _ := al.summarizeBatch(ctx, part2, "")
 
-		// Merge them
 		mergePrompt := fmt.Sprintf("Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s", s1, s2)
 		resp, err := al.provider.Chat(ctx, []providers.Message{{Role: "user", Content: mergePrompt}}, nil, al.model, map[string]interface{}{
 			"max_tokens":  1024,
@@ -877,7 +1253,6 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 		al.sessions.TruncateHistory(sessionKey, 4)
 		al.sessions.Save(sessionKey)
 		
-		// Também salva no banco se disponível
 		al.saveSessionToDB(ctx, sessionKey)
 	}
 }
@@ -907,13 +1282,12 @@ func (al *AgentLoop) summarizeBatch(ctx context.Context, batch []providers.Messa
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	total := 0
 	for _, m := range messages {
-		total += len(m.Content) / 4 // Simple heuristic: 4 chars per token
+		total += len(m.Content) / 4
 	}
 	return total
 }
 
 // isToolCallFormat verifica se o conteúdo é formato interno de tool call
-// FIX: Evita que código interno seja mostrado ao usuário
 func isToolCallFormat(content string) bool {
 	if content == "" {
 		return false
