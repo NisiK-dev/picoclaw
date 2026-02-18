@@ -1,9 +1,16 @@
 // Package: main
 // File: main.go
-
 // PicoClaw - Ultra-lightweight personal AI agent
-// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot   
+// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
 // License: MIT
+//
+// CORREÇÕES APLICADAS:
+// - Erros de context.Context nas funções de banco de dados
+// - Suporte a múltiplas LLMs (OpenRouter, Anthropic, OpenAI, Gemini)
+// - Sistema de raciocínio antes de usar LLMs
+// - Banco de dados como máquina única
+// - Correção de conflito no Telegram
+// - Respostas mais humanas
 //
 // Copyright (c) 2026 PicoClaw contributors
 
@@ -22,6 +29,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chzyer/readline"
@@ -244,7 +252,6 @@ func printHelp() {
 	fmt.Println("  auth        Manage authentication (login, logout, status)")
 	fmt.Println("  gateway     Start picoclaw gateway")
 	fmt.Println("  status      Show picoclaw status")
-	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	fmt.Println("  version     Show version information")
@@ -551,6 +558,82 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	}
 }
 
+// ============================================
+// SINGLETON MANAGER PARA EVITAR CONFLITO NO TELEGRAM
+// ============================================
+
+// InstanceManager garante que apenas uma instância do bot rode por vez
+type InstanceManager struct {
+	db         database.DBProvider
+	lockID     int64
+	instanceID string
+	mu         sync.Mutex
+}
+
+// NewInstanceManager cria um novo gerenciador de instância
+func NewInstanceManager(db database.DBProvider) *InstanceManager {
+	return &InstanceManager{
+		db:         db,
+		lockID:     42, // ID fixo para lock de instância
+		instanceID: fmt.Sprintf("%s-%d", hostname(), time.Now().Unix()),
+	}
+}
+
+// TryAcquire tenta adquirir o lock de instância única
+// Retorna true se conseguiu, false se outra instância já está rodando
+func (im *InstanceManager) TryAcquire(ctx context.Context) (bool, error) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
+	if im.db == nil || !im.db.IsConnected() {
+		// Sem banco de dados, permite execução (modo local)
+		return true, nil
+	}
+
+	// Tenta adquirir lock usando pg_try_advisory_lock (não bloqueante)
+	var acquired bool
+	row := im.db.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", im.lockID)
+	if err := row.Scan(&acquired); err != nil {
+		return false, fmt.Errorf("erro ao tentar adquirir lock: %w", err)
+	}
+
+	if acquired {
+		logger.InfoC("instance", "✓ Lock de instância adquirido (somos a instância principal)")
+		return true, nil
+	}
+
+	logger.WarnC("instance", "✗ Outra instância já está rodando (lock em uso)")
+	return false, nil
+}
+
+// Release libera o lock de instância
+func (im *InstanceManager) Release(ctx context.Context) error {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
+	if im.db == nil || !im.db.IsConnected() {
+		return nil
+	}
+
+	_, err := im.db.Exec(ctx, "SELECT pg_advisory_unlock($1)", im.lockID)
+	if err == nil {
+		logger.InfoC("instance", "Lock de instância liberado")
+	}
+	return err
+}
+
+func hostname() string {
+	h, _ := os.Hostname()
+	if h == "" {
+		return "unknown"
+	}
+	return h
+}
+
+// ============================================
+// GATEWAY COMMAND COM TODAS AS CORREÇÕES
+// ============================================
+
 func gatewayCmd() {
 	// Check for --debug flag
 	args := os.Args[2:]
@@ -579,72 +662,25 @@ func gatewayCmd() {
 
 	// ============================================
 	// INICIALIZAÇÃO DO BANCO DE DADOS (POSTGRESQL)
-	// CORREÇÃO: Usar connection pooler do Supabase (IPv4) em vez de conexão direta (IPv6)
+	// CORREÇÃO: Usar connection pooler do Supabase (IPv4)
 	// ============================================
 	var dbProvider *database.Provider
 
 	// Configuração do banco de dados
-	dbConfig := database.DBConfig{}
+	dbConfig := database.DBConfig{
+		MaxConns: 5,
+		MinConns: 1,
+	}
 
-	// CORREÇÃO: Tenta usar DATABASE_URL primeiro (deve ser o connection pooler do Supabase)
-	// O pooler funciona com IPv4, diferente da conexão direta que usa IPv6 (não suportado no Render)
+	// Obtém DATABASE_URL
 	dbURL := os.Getenv("DATABASE_URL")
-	
-	// Se não tiver DATABASE_URL, tenta montar a partir das variáveis individuais
 	if dbURL == "" {
-		// Tenta usar DATABASE_POOLER_URL (alternativa)
 		dbURL = os.Getenv("DATABASE_POOLER_URL")
 	}
-	
-	// Se ainda não tiver, monta a partir das variáveis individuais
 	if dbURL == "" {
-		host := os.Getenv("DB_HOST")
-		port := os.Getenv("DB_PORT")
-		user := os.Getenv("DB_USER")
-		password := os.Getenv("DB_PASSWORD")
-		dbname := os.Getenv("DB_NAME")
-		sslmode := os.Getenv("DB_SSLMODE")
-		
-		// Valores padrão
-		if host == "" {
-			host = "localhost"
-		}
-		if port == "" {
-			port = "6543" // Porta do transaction pooler do Supabase (IPv4)
-		}
-		if user == "" {
-			user = "postgres"
-		}
-		if dbname == "" {
-			dbname = "postgres"
-		}
-		if sslmode == "" {
-			sslmode = "require"
-		}
-		
-		// CORREÇÃO IMPORTANTE: Se for conexão com Supabase, usar formato do pooler
-		// O formato do pooler é: postgres.[PROJECT_REF] como usuário
-		// e aws-0-[REGION].pooler.supabase.com como host
-		if strings.Contains(host, "supabase.co") && !strings.Contains(host, "pooler") {
-			// É uma conexão direta (IPv6) - precisa converter para pooler (IPv4)
-			// Extrai o project ref do host (db.czsqjrgjjgrpwuoimllb.supabase.co -> czsqjrgjjgrpwuoimllb)
-			parts := strings.Split(host, ".")
-			if len(parts) >= 2 {
-				projectRef := parts[1]
-				// Assume região us-west-1 (ajuste se necessário)
-				host = fmt.Sprintf("aws-0-us-west-1.pooler.supabase.com")
-				// Usuário do pooler inclui o project ref
-				user = fmt.Sprintf("postgres.%s", projectRef)
-				port = "6543" // Transaction pooler port
-				logger.InfoC("database", "Convertendo conexão Supabase direta para pooler (IPv4)")
-			}
-		}
-		
-		dbURL = fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=%s",
-			user, password, host, port, dbname, sslmode)
+		dbURL = os.Getenv("SUPABASE_URL")
 	}
 
-	// Configura a URL no dbConfig
 	if dbURL != "" {
 		dbConfig.SupabaseURL = dbURL
 	}
@@ -653,18 +689,16 @@ func gatewayCmd() {
 	if dbConfig.SupabaseURL != "" {
 		logger.InfoC("database", "Tentando conectar ao banco de dados...")
 		
-		// Usa NewDBProvider (retorna interface) e faz type assertion
 		dbProv, err := database.NewDBProvider(dbConfig)
 		if err != nil {
 			logger.WarnC("database", "Falha ao criar provider: "+err.Error())
 		} else {
-			// Type assertion para *Provider
 			var ok bool
 			dbProvider, ok = dbProv.(*database.Provider)
 			if !ok {
 				logger.WarnC("database", "Falha na type assertion do provider")
 			} else {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 				defer cancel()
 				
 				if err := dbProvider.Connect(ctx); err != nil {
@@ -680,6 +714,36 @@ func gatewayCmd() {
 		logger.InfoC("database", "Banco de dados não configurado, usando storage local")
 	}
 
+	// ============================================
+	// VERIFICAÇÃO DE INSTÂNCIA ÚNICA (EVITA CONFLITO NO TELEGRAM)
+	// ============================================
+	instanceManager := NewInstanceManager(dbProvider)
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	canRun, err := instanceManager.TryAcquire(ctx)
+	cancel()
+	
+	if err != nil {
+		logger.WarnC("instance", "Erro ao verificar instância: "+err.Error())
+	}
+	
+	if !canRun {
+		fmt.Println("\n❌ ERRO: Outra instância do PicoClaw já está rodando!")
+		fmt.Println("   Isso causa conflito no Telegram (getUpdates).")
+		fmt.Println("   Soluções:")
+		fmt.Println("   1. Pare a outra instância antes de iniciar esta")
+		fmt.Println("   2. Use um token de bot diferente")
+		fmt.Println("   3. Aguarde 30 segundos e tente novamente")
+		os.Exit(1)
+	}
+
+	// Garante que o lock seja liberado ao sair
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		instanceManager.Release(ctx)
+		cancel()
+	}()
+
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
 	startupInfo := agentLoop.GetStartupInfo()
@@ -693,6 +757,7 @@ func gatewayCmd() {
 	// Mostra status do banco
 	if dbProvider != nil && dbProvider.IsConnected() {
 		fmt.Println("  • Database: ✓ connected")
+		fmt.Println("  • Machine: ✓ single shared state")
 	} else {
 		fmt.Println("  • Database: ✗ not connected (using local storage)")
 	}
@@ -775,7 +840,7 @@ func gatewayCmd() {
 	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop")
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 
 	if err := cronService.Start(); err != nil {
@@ -811,6 +876,11 @@ func gatewayCmd() {
 	<-sigChan
 
 	fmt.Println("\nShutting down...")
+	
+	// Libera lock de instância
+	releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	instanceManager.Release(releaseCtx)
+	releaseCancel()
 	
 	// Desconecta do banco de dados
 	if dbProvider != nil {
@@ -1577,54 +1647,4 @@ func skillsShowCmd(loader *skills.SkillsLoader, skillName string) {
 	fmt.Printf("\n📦 Skill: %s\n", skillName)
 	fmt.Println("----------------------")
 	fmt.Println(content)
-}
-
-// ============================================
-// FUNÇÕES DE LOCK DISTRIBUÍDO (POSTGRESQL)
-// ============================================
-
-// acquireLock tenta adquirir um lock exclusivo no PostgreSQL usando pg_try_advisory_lock
-// Retorna true se conseguiu o lock, false se não conseguiu (não bloqueia)
-func acquireLock(db database.DBProvider, lockID int64) (bool, error) {
-	var acquired bool
-	row := db.QueryRow("SELECT pg_try_advisory_lock($1)", lockID)
-	err := row.Scan(&acquired)
-	return acquired, err
-}
-
-// acquireLockWait tenta adquirir um lock exclusivo, aguardando se necessário
-// Usa pg_advisory_lock (bloqueante) - cuidado com deadlocks!
-func acquireLockWait(db database.DBProvider, lockID int64) error {
-	_, err := db.Exec("SELECT pg_advisory_lock($1)", lockID)
-	return err
-}
-
-// releaseLock libera um lock adquirido anteriormente
-func releaseLock(db database.DBProvider, lockID int64) error {
-	_, err := db.Exec("SELECT pg_advisory_unlock($1)", lockID)
-	return err
-}
-
-// releaseAllLocks libera todos os locks da sessão atual
-func releaseAllLocks(db database.DBProvider) error {
-	_, err := db.Exec("SELECT pg_advisory_unlock_all()")
-	return err
-}
-
-// withLock executa uma função dentro de um contexto de lock (padrão seguro)
-func withLock(db database.DBProvider, lockID int64, fn func() error) error {
-	// Tenta adquirir o lock
-	acquired, err := acquireLock(db, lockID)
-	if err != nil {
-		return fmt.Errorf("erro ao tentar adquirir lock: %w", err)
-	}
-	if !acquired {
-		return fmt.Errorf("não foi possível adquirir lock %d (já está em uso)", lockID)
-	}
-	
-	// Garante que o lock será liberado no final
-	defer releaseLock(db, lockID)
-	
-	// Executa a função
-	return fn()
 }
