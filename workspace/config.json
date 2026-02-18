@@ -41,7 +41,7 @@
       "model": "anthropic/claude-3.5-sonnet",
       "fallback_models": [
         "anthropic/claude-3-haiku",
-        "google/gemini-1.5-flash",
+        "google/Gemini 3 Flash",
         "meta-llama/llama-3.1-70b-instruct"
       ],
       "timeout": 60,
@@ -64,7 +64,7 @@
     "gemini": {
       "api_key": "",
       "api_base": "https://generativelanguage.googleapis.com/v1beta",
-      "model": "gemini-1.5-flash",
+      "model": "Gemini 3 Flash",
       "timeout": 60,
       "max_retries": 3
     },
