@@ -701,8 +701,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 			"confidence":   confidence,
 		})
 
-	// Verifica cache primeiro
-	cacheKey := fmt.Sprintf("%s:%s", messageType, utils.HashString(opts.UserMessage))
+	// Verifica cache primeiro (usa hash simples da mensagem)
+	cacheKey := fmt.Sprintf("%s:%d", messageType, simpleHash(opts.UserMessage))
 	if cachedResponse, found := al.responseCache.Get(cacheKey); found && messageType != "complex" {
 		logger.InfoC("agent", "Resposta encontrada no cache")
 		return cachedResponse, nil
@@ -1315,4 +1315,13 @@ func isToolCallFormat(content string) bool {
 		}
 	}
 	return false
+}
+
+// simpleHash calcula um hash simples para string (usado no cache)
+func simpleHash(s string) uint32 {
+	var h uint32 = 5381
+	for i := 0; i < len(s); i++ {
+		h = ((h << 5) + h) + uint32(s[i])
+	}
+	return h
 }
