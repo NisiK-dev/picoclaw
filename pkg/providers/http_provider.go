@@ -1,5 +1,5 @@
 // PicoClaw - Ultra-lightweight personal AI agent
-// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
+// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot 
 // License: MIT
 //
 // Copyright (c) 2026 PicoClaw contributors
@@ -101,7 +101,13 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 
 	req.Header.Set("Content-Type", "application/json")
 	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		// Gemini API uses x-goog-api-key header instead of Authorization: Bearer
+		if strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
+			req.Header.Set("x-goog-api-key", p.apiKey)
+		} else {
+			// Standard OpenAI-compatible APIs (Groq, OpenRouter, DeepSeek, etc.)
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
 	}
 
 	resp, err := p.httpClient.Do(req)
