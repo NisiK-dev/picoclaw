@@ -19,7 +19,7 @@
   },
   "providers": {
     "gemini": {
-      "api_key": "AIzaSyBfBmZDDJJJlTTpxGdH3yWYsqJR3UrLXMU",
+      "api_key": "",
       "api_base": "https://generativelanguage.googleapis.com/v1beta"
     },
     "groq": {
