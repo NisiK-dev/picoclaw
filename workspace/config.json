@@ -3,136 +3,64 @@
     "defaults": {
       "workspace": "/opt/render/project/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "provider": "groq",
-      "model": "llama-3.3-70b-versatile",
-      "max_tokens": 4096,
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 15,
-      "reasoning_enabled": true,
-      "use_emojis": true,
-      "personality_tone": "friendly"
+      "max_tool_iterations": 20
     }
   },
   "channels": {
     "telegram": {
       "enabled": true,
-      "token": "${TELEGRAM_BOT_TOKEN}",
-      "allow_from": [],
-      "polling_interval": 1,
-      "retry_delay": 5,
-      "max_retries": 3
+      "token": "",
+      "allow_from": []
     }
   },
   "providers": {
+    "gemini": {
+      "api_key": "",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta"
+    },
     "groq": {
-      "api_key": "${GROQ_API_KEY}",
-      "api_base": "https://api.groq.com/openai/v1",
-      "model": "llama-3.3-70b-versatile",
-      "fallback_models": [
-        "llama-3.1-70b-versatile",
-        "mixtral-8x7b-32768"
-      ],
-      "timeout": 30,
-      "max_retries": 2
-    },
-    "gemini_flash_lite": {
-      "api_key": "${PICOCLAW_PROVIDERS_GEMINI_API_KEY}",
-      "api_base": "https://generativelanguage.googleapis.com/v1beta",
-      "model": "gemini-2.5-flash-lite",
-      "timeout": 30,
-      "max_retries": 2
-    },
-    "gemini_20_flash": {
-      "api_key": "${PICOCLAW_PROVIDERS_GEMINI_API_KEY}",
-      "api_base": "https://generativelanguage.googleapis.com/v1beta",
-      "model": "Gemini 3 Flash",
-      "timeout": 30,
-      "max_retries": 2
-    },
-    "gemini_25_flash": {
-      "api_key": "${PICOCLAW_PROVIDERS_GEMINI_API_KEY}",
-      "api_base": "https://generativelanguage.googleapis.com/v1beta",
-      "model": "gemini-2.5-flash",
-      "timeout": 30,
-      "max_retries": 2
+      "api_key": "",
+      "api_base": "https://api.groq.com/openai/v1"
     },
     "openrouter": {
-      "api_key": "${OPENROUTER_API_KEY}",
-      "api_base": "https://openrouter.ai/api/v1",
-      "model": "google/gemini-flash-1.5",
-      "fallback_models": [
-        "mistralai/mistral-7b-instruct:free",
-        "huggingfaceh4/zephyr-7b-beta:free",
-        "gryphe/mythomax-l2-13b:free"
-      ],
-      "timeout": 45,
-      "max_retries": 2
-    },
-    "zhipu": {
-      "api_key": "${ZHIPU_API_KEY}",
-      "api_base": "https://open.bigmodel.cn/api/paas/v4",
-      "model": "glm-4-flash",
-      "timeout": 45,
-      "max_retries": 2
+      "api_key": "",
+      "api_base": "https://openrouter.ai/api/v1"
     },
     "together": {
-      "api_key": "${TOGETHER_API_KEY}",
-      "api_base": "https://api.together.xyz/v1",
-      "model": "meta-llama/Llama-4-Scout-17B-16E",
-      "timeout": 60,
-      "max_retries": 2
-    }
-  },
-  "llm": {
-    "primary_provider": "groq",
-    "fallback_chain": [
-      "gemini_flash_lite",
-      "gemini_20_flash", 
-      "gemini_25_flash",
-      "zhipu",
-      "openrouter",
-      "together"
-    ],
-    "auto_fallback": true,
-    "fallback_on_quota_exceeded": true,
-    "fallback_on_rate_limit": true,
-    "cache_responses": true,
-    "cache_ttl_minutes": 10
-  },
-  "rate_limits": {
-    "groq": {
-      "requests_per_minute": 20,
-      "requests_per_day": 14400,
-      "tokens_per_minute": 300000
+      "api_key": "",
+      "api_base": "https://api.together.xyz/v1"
     },
-    "gemini_flash_lite": {
-      "requests_per_minute": 15,
-      "requests_per_day": 1000
+    "fireworks": {
+      "api_key": "",
+      "api_base": "https://api.fireworks.ai/inference/v1"
     },
-    "gemini_20_flash": {
-      "requests_per_minute": 15,
-      "requests_per_day": 200
+    "deepseek": {
+      "api_key": "",
+      "api_base": "https://api.deepseek.com/v1"
     },
-    "gemini_25_flash": {
-      "requests_per_minute": 10,
-      "requests_per_day": 20
+    "mistral": {
+      "api_key": "",
+      "api_base": "https://api.mistral.ai/v1"
     },
-    "zhipu": {
-      "requests_per_minute": 10,
-      "requests_per_day": 1000
+    "cohere": {
+      "api_key": "",
+      "api_base": "https://api.cohere.ai/v1"
     },
-    "openrouter": {
-      "requests_per_minute": 10,
-      "requests_per_day": 200
+    "ai21": {
+      "api_key": "",
+      "api_base": "https://api.ai21.com/studio/v1"
+    },
+    "perplexity": {
+      "api_key": "",
+      "api_base": "https://api.perplexity.ai"
     }
   },
   "gateway": {
     "host": "0.0.0.0",
     "port": 10000
-  },
-  "logging": {
-    "level": "info",
-    "format": "json",
-    "output": "stdout"
   }
 }
