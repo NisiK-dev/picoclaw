@@ -45,7 +45,7 @@
     "gemini_20_flash": {
       "api_key": "${PICOCLAW_PROVIDERS_GEMINI_API_KEY}",
       "api_base": "https://generativelanguage.googleapis.com/v1beta",
-      "model": "gemini-2.0-flash",
+      "model": "Gemini 3 Flash",
       "timeout": 30,
       "max_retries": 2
     },
