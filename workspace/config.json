@@ -3,8 +3,8 @@
     "defaults": {
       "workspace": "/opt/render/project/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
+      "provider": "openrouter",
+      "model": "anthropic/claude-3.5-sonnet:free",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
