@@ -1,8 +1,8 @@
 #!/bin/sh
 
 # Criar diretórios necessários
-mkdir -p $HOME/.picoclaw/workspace
-cp -r workspace/* $HOME/.picoclaw/workspace/
+mkdir -p "$HOME/.picoclaw/workspace"
+cp -r workspace/* "$HOME/.picoclaw/workspace/"
 
 # Pegar as variáveis de ambiente
 OPENROUTER_KEY="$OPENROUTER_API_KEY"
@@ -11,13 +11,15 @@ TELEGRAM_USER_ID="$TELEGRAM_USER_ID"
 
 # Verificar se a API key do OpenRouter está definida
 if [ -z "$OPENROUTER_KEY" ]; then
-    echo "ERROR: OPENROUTER_API_KEY não está definida!"
+    echo "ERROR: OPENROUTER_API_KEY nao esta definida!"
     exit 1
 fi
 
 # Verificar se o token do Telegram está definido
 if [ -z "$TELEGRAM_TOKEN" ]; then
-    echo "WARNING: TELEGRAM_BOT_TOKEN não está definida! O bot não funcionará."
+    echo "WARNING: TELEGRAM_BOT_TOKEN nao esta definida! O bot nao funcionara."
+else
+    echo "OK: TELEGRAM_BOT_TOKEN definido"
 fi
 
 # Corrigir a connection string do Supabase (mudar porta 6543 para 5432)
@@ -28,7 +30,7 @@ if [ -n "$DATABASE_URL" ]; then
 fi
 
 # Criar config.json dinamicamente
-cat > $HOME/.picoclaw/config.json << EOF
+cat > "$HOME/.picoclaw/config.json" << EOF
 {
   "agents": {
     "defaults": {
@@ -52,7 +54,7 @@ cat > $HOME/.picoclaw/config.json << EOF
     },
     "discord": {
       "enabled": false,
-      "token": "YOUR_DISCORD_BOT_TOKEN",
+      "token": "",
       "allow_from": []
     },
     "maixcam": {
@@ -76,20 +78,20 @@ cat > $HOME/.picoclaw/config.json << EOF
     },
     "dingtalk": {
       "enabled": false,
-      "client_id": "YOUR_CLIENT_ID",
-      "client_secret": "YOUR_CLIENT_SECRET",
+      "client_id": "",
+      "client_secret": "",
       "allow_from": []
     },
     "slack": {
       "enabled": false,
-      "bot_token": "xoxb-YOUR-BOT-TOKEN",
-      "app_token": "xapp-YOUR-APP-TOKEN",
+      "bot_token": "",
+      "app_token": "",
       "allow_from": []
     },
     "line": {
       "enabled": false,
-      "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
-      "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
+      "channel_secret": "",
+      "channel_access_token": "",
       "webhook_host": "0.0.0.0",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
@@ -119,11 +121,11 @@ cat > $HOME/.picoclaw/config.json << EOF
       "api_base": "https://openrouter.ai/api/v1"
     },
     "groq": {
-      "api_key": "gsk_xxx",
+      "api_key": "",
       "api_base": ""
     },
     "zhipu": {
-      "api_key": "YOUR_ZHIPU_API_KEY",
+      "api_key": "",
       "api_base": ""
     },
     "gemini": {
@@ -135,12 +137,12 @@ cat > $HOME/.picoclaw/config.json << EOF
       "api_base": ""
     },
     "nvidia": {
-      "api_key": "nvapi-xxx",
+      "api_key": "",
       "api_base": "",
-      "proxy": "http://127.0.0.1:7890 "
+      "proxy": ""
     },
     "moonshot": {
-      "api_key": "sk-xxx",
+      "api_key": "",
       "api_base": ""
     },
     "ollama": {
@@ -152,12 +154,12 @@ cat > $HOME/.picoclaw/config.json << EOF
     "web": {
       "brave": {
         "enabled": false,
-        "api_key": "YOUR_BRAVE_API_KEY",
+        "api_key": "",
         "max_results": 5
       },
       "perplexity": {
         "enabled": false,
-        "api_key": "pplx-xxx",
+        "api_key": "",
         "max_results": 5
       }
     },
@@ -183,11 +185,6 @@ EOF
 echo "Config created successfully!"
 echo "- OpenRouter: configurado"
 echo "- Telegram: ativado"
-if [ -n "$TELEGRAM_TOKEN" ]; then
-    echo "  Token: ${TELEGRAM_TOKEN:0:10}..."
-else
-    echo "  Token: NÃO DEFINIDO!"
-fi
 
 # Iniciar o gateway
 exec ./picoclaw gateway
