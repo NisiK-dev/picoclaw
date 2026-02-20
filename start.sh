@@ -4,13 +4,27 @@
 mkdir -p $HOME/.picoclaw/workspace
 cp -r workspace/* $HOME/.picoclaw/workspace/
 
-# Pegar a API key do OpenRouter da variável de ambiente
+# Pegar as variáveis de ambiente
 OPENROUTER_KEY="$OPENROUTER_API_KEY"
+TELEGRAM_TOKEN="$TELEGRAM_BOT_TOKEN"
+TELEGRAM_USER_ID="$TELEGRAM_USER_ID"
 
-# Verificar se a API key está definida
+# Verificar se a API key do OpenRouter está definida
 if [ -z "$OPENROUTER_KEY" ]; then
     echo "ERROR: OPENROUTER_API_KEY não está definida!"
     exit 1
+fi
+
+# Verificar se o token do Telegram está definido
+if [ -z "$TELEGRAM_TOKEN" ]; then
+    echo "WARNING: TELEGRAM_BOT_TOKEN não está definida! O bot não funcionará."
+fi
+
+# Corrigir a connection string do Supabase (mudar porta 6543 para 5432)
+if [ -n "$DATABASE_URL" ]; then
+    FIXED_DATABASE_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//g')
+    export DATABASE_URL="$FIXED_DATABASE_URL"
+    echo "Database URL corrigida para usar porta 5432"
 fi
 
 # Criar config.json dinamicamente
@@ -29,11 +43,11 @@ cat > $HOME/.picoclaw/config.json << EOF
   },
   "channels": {
     "telegram": {
-      "enabled": false,
-      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "enabled": true,
+      "token": "$TELEGRAM_TOKEN",
       "proxy": "",
       "allow_from": [
-        "YOUR_USER_ID"
+        "$TELEGRAM_USER_ID"
       ]
     },
     "discord": {
@@ -166,7 +180,14 @@ cat > $HOME/.picoclaw/config.json << EOF
 }
 EOF
 
-echo "Config created successfully with OpenRouter provider"
+echo "Config created successfully!"
+echo "- OpenRouter: configurado"
+echo "- Telegram: ativado"
+if [ -n "$TELEGRAM_TOKEN" ]; then
+    echo "  Token: ${TELEGRAM_TOKEN:0:10}..."
+else
+    echo "  Token: NÃO DEFINIDO!"
+fi
 
 # Iniciar o gateway
 exec ./picoclaw gateway
