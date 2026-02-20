@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: picoclaw
+    runtime: go
+    buildCommand: go mod tidy && go generate ./... && go build -o picoclaw ./cmd/picoclaw && chmod +x start.sh
+    startCommand: ./start.sh
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false
