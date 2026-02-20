@@ -4,7 +4,16 @@
 mkdir -p $HOME/.picoclaw/workspace
 cp -r workspace/* $HOME/.picoclaw/workspace/
 
-# Criar config.json dinamicamente com as variáveis de ambiente do Render
+# Pegar a API key do OpenRouter da variável de ambiente
+OPENROUTER_KEY="$OPENROUTER_API_KEY"
+
+# Verificar se a API key está definida
+if [ -z "$OPENROUTER_KEY" ]; then
+    echo "ERROR: OPENROUTER_API_KEY não está definida!"
+    exit 1
+fi
+
+# Criar config.json dinamicamente
 cat > $HOME/.picoclaw/config.json << EOF
 {
   "agents": {
@@ -92,7 +101,7 @@ cat > $HOME/.picoclaw/config.json << EOF
       "web_search": true
     },
     "openrouter": {
-      "api_key": "$OPENROUTER_API_KEY",
+      "api_key": "$OPENROUTER_KEY",
       "api_base": "https://openrouter.ai/api/v1"
     },
     "groq": {
@@ -157,7 +166,7 @@ cat > $HOME/.picoclaw/config.json << EOF
 }
 EOF
 
-echo "Config created with OpenRouter API Key: ${OPENROUTER_API_KEY:0:10}..."
+echo "Config created successfully with OpenRouter provider"
 
 # Iniciar o gateway
 exec ./picoclaw gateway
