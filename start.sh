@@ -1,43 +1,38 @@
 #!/bin/sh
 
-# Criar diretórios necessários
 mkdir -p "$HOME/.picoclaw/workspace"
 cp -r workspace/* "$HOME/.picoclaw/workspace/"
 
-# Pegar as variáveis de ambiente
 OPENROUTER_KEY="$OPENROUTER_API_KEY"
 TELEGRAM_TOKEN="$TELEGRAM_BOT_TOKEN"
-TELEGRAM_USER_ID="$TELEGRAM_USER_ID"
 SERPER_KEY="$SERPER_API_KEY"
 
 echo "=== DEBUG ==="
-echo "TELEGRAM_BOT_TOKEN length: ${#TELEGRAM_TOKEN}"
-echo "TELEGRAM_USER_ID: $TELEGRAM_USER_ID"
-echo "OPENROUTER_KEY length: ${#OPENROUTER_KEY}"
+echo "OPENROUTER_KEY definida: $(if [ -n "$OPENROUTER_KEY" ]; then echo SIM; else echo NAO; fi)"
+echo "TELEGRAM_TOKEN definida: $(if [ -n "$TELEGRAM_TOKEN" ]; then echo SIM; else echo NAO; fi)"
+echo "SERPER_KEY definida: $(if [ -n "$SERPER_KEY" ]; then echo SIM; else echo NAO; fi)"
 echo "============="
 
-# Verificar se a API key do OpenRouter está definida
 if [ -z "$OPENROUTER_KEY" ]; then
     echo "ERROR: OPENROUTER_API_KEY nao esta definida!"
     exit 1
 fi
 
-# Verificar se o token do Telegram está definido
 if [ -z "$TELEGRAM_TOKEN" ]; then
     echo "ERROR: TELEGRAM_BOT_TOKEN nao esta definida!"
     exit 1
-else
-    echo "OK: TELEGRAM_BOT_TOKEN definido"
 fi
 
-# Corrigir a connection string do Supabase
+# LIMPAR WEBHOOK DO TELEGRAM
+echo "Limpando webhook do Telegram..."
+curl -s "https://api.telegram.org/bot$TELEGRAM_TOKEN/deleteWebhook" > /dev/null
+echo "OK"
+
 if [ -n "$DATABASE_URL" ]; then
-    FIXED_DATABASE_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//g')
-    export DATABASE_URL="$FIXED_DATABASE_URL"
-    echo "Database URL corrigida"
+    export DATABASE_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//g')
+    echo "Database OK"
 fi
 
-# Criar config.json
 cat > "$HOME/.picoclaw/config.json" << EOF
 {
   "agents": {
@@ -67,9 +62,13 @@ cat > "$HOME/.picoclaw/config.json" << EOF
   },
   "tools": {
     "web": {
-      "super": {
+      "serper": {
         "enabled": true,
         "api_key": "$SERPER_KEY",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
         "max_results": 5
       }
     }
@@ -89,8 +88,8 @@ cat > "$HOME/.picoclaw/config.json" << EOF
 }
 EOF
 
-echo "Config created!"
-echo "Token no config: $(grep -o '"token": "[^"]*' $HOME/.picoclaw/config.json | head -1)"
+echo "Config criado com sucesso!"
+echo "- Serper: $(if [ -n "$SERPER_KEY" ]; then echo ATIVO; else echo DESATIVADO; fi)"
+echo "- DuckDuckGo: ATIVO (backup)"
 
-# Iniciar
 exec ./picoclaw gateway
