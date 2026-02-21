@@ -7,12 +7,6 @@ OPENROUTER_KEY="$OPENROUTER_API_KEY"
 TELEGRAM_TOKEN="$TELEGRAM_BOT_TOKEN"
 SERPER_KEY="$SERPER_API_KEY"
 
-echo "=== DEBUG ==="
-echo "OPENROUTER_KEY definida: $(if [ -n "$OPENROUTER_KEY" ]; then echo SIM; else echo NAO; fi)"
-echo "TELEGRAM_TOKEN definida: $(if [ -n "$TELEGRAM_TOKEN" ]; then echo SIM; else echo NAO; fi)"
-echo "SERPER_KEY definida: $(if [ -n "$SERPER_KEY" ]; then echo SIM; else echo NAO; fi)"
-echo "============="
-
 if [ -z "$OPENROUTER_KEY" ]; then
     echo "ERROR: OPENROUTER_API_KEY nao esta definida!"
     exit 1
@@ -23,16 +17,29 @@ if [ -z "$TELEGRAM_TOKEN" ]; then
     exit 1
 fi
 
-# LIMPAR WEBHOOK DO TELEGRAM
-echo "Limpando webhook do Telegram..."
+# LIMPAR WEBHOOK
 curl -s "https://api.telegram.org/bot$TELEGRAM_TOKEN/deleteWebhook" > /dev/null
-echo "OK"
 
+# CORRIGIR DATABASE URL
 if [ -n "$DATABASE_URL" ]; then
     export DATABASE_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//g')
-    echo "Database OK"
 fi
 
+# CRIAR HEARTBEAT.md
+cat > "$HOME/.picoclaw/workspace/HEARTBEAT.md" << 'HEARTBEAT'
+# Tarefas Automáticas
+
+## Quick Tasks
+- Reportar hora atual se for 12:00 (almoço) ou 18:00 (fim de expediente)
+
+## Long Tasks (use spawn)
+- Pesquisar últimas notícias de tecnologia e enviar resumo com 3 títulos principais
+- Verificar previsão do tempo para amanhã e enviar alerta se chover
+HEARTBEAT
+
+echo "HEARTBEAT criado!"
+
+# CRIAR CONFIG.JSON
 cat > "$HOME/.picoclaw/config.json" << EOF
 {
   "agents": {
@@ -74,7 +81,7 @@ cat > "$HOME/.picoclaw/config.json" << EOF
     }
   },
   "heartbeat": {
-    "enabled": false,
+    "enabled": true,
     "interval": 30
   },
   "devices": {
@@ -88,8 +95,5 @@ cat > "$HOME/.picoclaw/config.json" << EOF
 }
 EOF
 
-echo "Config criado com sucesso!"
-echo "- Serper: $(if [ -n "$SERPER_KEY" ]; then echo ATIVO; else echo DESATIVADO; fi)"
-echo "- DuckDuckGo: ATIVO (backup)"
-
+echo "Config OK - Heartbeat ativo (30 min)!"
 exec ./picoclaw gateway
