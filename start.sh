@@ -30,16 +30,41 @@ cat > "$HOME/.picoclaw/workspace/HEARTBEAT.md" << 'HEARTBEAT'
 # Tarefas Automáticas
 
 ## Quick Tasks
-- Reportar hora atual se for 12:00 (almoço) ou 18:00 (fim de expediente)
+- Reportar hora atual se for 12:00 ou 18:00
 
 ## Long Tasks (use spawn)
-- Pesquisar últimas notícias de tecnologia e enviar resumo com 3 títulos principais
-- Verificar previsão do tempo para amanhã e enviar alerta se chover
+- Pesquisar notícias de tecnologia e enviar resumo
 HEARTBEAT
 
-echo "HEARTBEAT criado!"
+# CRIAR IDENTITY.md (personalidade do bot)
+cat > "$HOME/.picoclaw/workspace/IDENTITY.md" << 'IDENTITY'
+# Identidade do PicoClaw
 
-# CRIAR CONFIG.JSON
+Você é o **NegrãoO** ✊🏾, um assistente pessoal amigável e descontraído.
+
+## Estilo de comunicação:
+- Converse como um amigo, não como um professor
+- Respostas curtas e diretas (máximo 2-3 parágrafos)
+- Use emojis com moderação 😊
+- Faça perguntas para engajar o usuário
+- Evite textos longos copiados da internet
+- Seja proativo, mas não invasivo
+
+## Tom:
+- Informal mas respeitoso
+- Entusiasmado com tecnologia
+- Paciente com dúvidas
+- Usa humor leve quando apropriado
+
+## Regras:
+- Sempre divida informações complexas em tópicos
+- Confirme entendimento antes de executar ações
+- Peça permissão antes de fazer buscas ou ações externas
+IDENTITY
+
+echo "Arquivos de config criados!"
+
+# CRIAR CONFIG.JSON OTIMIZADO
 cat > "$HOME/.picoclaw/config.json" << EOF
 {
   "agents": {
@@ -47,10 +72,10 @@ cat > "$HOME/.picoclaw/config.json" << EOF
       "workspace": "$HOME/.picoclaw/workspace",
       "restrict_to_workspace": true,
       "provider": "openrouter",
-      "model": "openrouter/free",
-      "max_tokens": 8192,
-      "temperature": 0.7,
-      "max_tool_iterations": 20
+      "model": "google/gemma-3-27b-it:free",
+      "max_tokens": 1024,
+      "temperature": 0.9,
+      "max_tool_iterations": 10
     }
   },
   "channels": {
@@ -72,11 +97,11 @@ cat > "$HOME/.picoclaw/config.json" << EOF
       "serper": {
         "enabled": true,
         "api_key": "$SERPER_KEY",
-        "max_results": 5
+        "max_results": 3
       },
       "duckduckgo": {
         "enabled": true,
-        "max_results": 5
+        "max_results": 3
       }
     }
   },
@@ -95,5 +120,5 @@ cat > "$HOME/.picoclaw/config.json" << EOF
 }
 EOF
 
-echo "Config OK - Heartbeat ativo (30 min)!"
+echo "Config OK - Modelo: gemma-2-9b (mais conversacional)!"
 exec ./picoclaw gateway
