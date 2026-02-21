@@ -64,7 +64,7 @@ IDENTITY
 
 echo "Arquivos de config criados!"
 
-# CRIAR CONFIG.JSON COM MODELO FUNCIONAL
+# CRIAR CONFIG.JSON COM openrouter/free
 cat > "$HOME/.picoclaw/config.json" << EOF
 {
   "agents": {
@@ -72,7 +72,7 @@ cat > "$HOME/.picoclaw/config.json" << EOF
       "workspace": "$HOME/.picoclaw/workspace",
       "restrict_to_workspace": true,
       "provider": "openrouter",
-      "model": "meta-llama/llama-3.3-70b-instruct:free",
+      "model": "openrouter/free",
       "max_tokens": 1024,
       "temperature": 0.9,
       "max_tool_iterations": 10
@@ -120,5 +120,5 @@ cat > "$HOME/.picoclaw/config.json" << EOF
 }
 EOF
 
-echo "Config OK - Modelo: Llama 3.3 70B (gratuito e poderoso)!"
+echo "Config OK - Modelo: openrouter/free (auto-selecao do melhor disponivel)!"
 exec ./picoclaw gateway
