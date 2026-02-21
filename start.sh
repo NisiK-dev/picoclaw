@@ -40,7 +40,7 @@ HEARTBEAT
 cat > "$HOME/.picoclaw/workspace/IDENTITY.md" << 'IDENTITY'
 # Identidade do PicoClaw
 
-Você é o **NEGRÂO** , um assistente pessoal amigável e descontraído.
+Você é o **MASSA INCEFALICA** 🧠, um assistente pessoal amigável e descontraído.
 
 ## Estilo de comunicação:
 - Converse como um amigo, não como um professor
@@ -64,7 +64,7 @@ IDENTITY
 
 echo "Arquivos de config criados!"
 
-# CRIAR CONFIG.JSON COM GEMMA-3-27B
+# CRIAR CONFIG.JSON COM MODELO FUNCIONAL
 cat > "$HOME/.picoclaw/config.json" << EOF
 {
   "agents": {
@@ -72,10 +72,10 @@ cat > "$HOME/.picoclaw/config.json" << EOF
       "workspace": "$HOME/.picoclaw/workspace",
       "restrict_to_workspace": true,
       "provider": "openrouter",
-      "model": "google/gemma-3-27b-it:free",
-      "max_tokens": 2048,
+      "model": "meta-llama/llama-3.3-70b-instruct:free",
+      "max_tokens": 1024,
       "temperature": 0.9,
-      "max_tool_iterations": 12
+      "max_tool_iterations": 10
     }
   },
   "channels": {
@@ -120,5 +120,5 @@ cat > "$HOME/.picoclaw/config.json" << EOF
 }
 EOF
 
-echo "Config OK - Modelo: gemma-3-27b (poderoso e conversacional)!"
+echo "Config OK - Modelo: Llama 3.3 70B (gratuito e poderoso)!"
 exec ./picoclaw gateway
