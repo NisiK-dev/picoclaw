@@ -36,11 +36,11 @@ cat > "$HOME/.picoclaw/workspace/HEARTBEAT.md" << 'HEARTBEAT'
 - Pesquisar notícias de tecnologia e enviar resumo
 HEARTBEAT
 
-# CRIAR IDENTITY.md (personalidade do bot)
+# CRIAR IDENTITY.md
 cat > "$HOME/.picoclaw/workspace/IDENTITY.md" << 'IDENTITY'
 # Identidade do PicoClaw
 
-Você é o **NegrãoO** ✊🏾, um assistente pessoal amigável e descontraído.
+Você é o **NEGRÂO** , um assistente pessoal amigável e descontraído.
 
 ## Estilo de comunicação:
 - Converse como um amigo, não como um professor
@@ -64,7 +64,7 @@ IDENTITY
 
 echo "Arquivos de config criados!"
 
-# CRIAR CONFIG.JSON OTIMIZADO
+# CRIAR CONFIG.JSON COM GEMMA-3-27B
 cat > "$HOME/.picoclaw/config.json" << EOF
 {
   "agents": {
@@ -73,9 +73,9 @@ cat > "$HOME/.picoclaw/config.json" << EOF
       "restrict_to_workspace": true,
       "provider": "openrouter",
       "model": "google/gemma-3-27b-it:free",
-      "max_tokens": 1024,
+      "max_tokens": 2048,
       "temperature": 0.9,
-      "max_tool_iterations": 10
+      "max_tool_iterations": 12
     }
   },
   "channels": {
@@ -120,5 +120,5 @@ cat > "$HOME/.picoclaw/config.json" << EOF
 }
 EOF
 
-echo "Config OK - Modelo: gemma-2-9b (mais conversacional)!"
+echo "Config OK - Modelo: gemma-3-27b (poderoso e conversacional)!"
 exec ./picoclaw gateway
