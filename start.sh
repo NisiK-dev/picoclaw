@@ -8,6 +8,7 @@ cp -r workspace/* "$HOME/.picoclaw/workspace/"
 OPENROUTER_KEY="$OPENROUTER_API_KEY"
 TELEGRAM_TOKEN="$TELEGRAM_BOT_TOKEN"
 TELEGRAM_USER_ID="$TELEGRAM_USER_ID"
+SERPER_KEY="$SERPER_API_KEY"
 
 echo "=== DEBUG ==="
 echo "TELEGRAM_BOT_TOKEN length: ${#TELEGRAM_TOKEN}"
@@ -66,9 +67,9 @@ cat > "$HOME/.picoclaw/config.json" << EOF
   },
   "tools": {
     "web": {
-      "brave": {
-        "enabled": false,
-        "api_key": "",
+      "super": {
+        "enabled": true,
+        "api_key": "$SERPER_KEY",
         "max_results": 5
       }
     }
