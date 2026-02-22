@@ -17,7 +17,7 @@ if [ -z "$TELEGRAM_TOKEN" ]; then
     exit 1
 fi
 
-# LIMPAR WEBHOOK
+# LIMPAR WEBHOOK (CORRIGIDO - sem espaço)
 curl -s "https://api.telegram.org/bot$TELEGRAM_TOKEN/deleteWebhook" > /dev/null
 
 # CORRIGIR DATABASE URL
@@ -38,7 +38,7 @@ HEARTBEAT
 
 # CRIAR IDENTITY.md
 cat > "$HOME/.picoclaw/workspace/IDENTITY.md" << 'IDENTITY'
-# Identidade do PicoClaw
+# Identidade do MASSA INCEFALICA 🧠
 
 Você é o **MASSA INCEFALICA** 🧠, um assistente pessoal amigável e descontraído.
 
@@ -64,7 +64,7 @@ IDENTITY
 
 echo "Arquivos de config criados!"
 
-# CRIAR CONFIG.JSON COM openrouter/free
+# CRIAR CONFIG.JSON COM cognitivecomputations/dolphin-mistral-24b-venice-edition:free
 cat > "$HOME/.picoclaw/config.json" << EOF
 {
   "agents": {
@@ -72,7 +72,7 @@ cat > "$HOME/.picoclaw/config.json" << EOF
       "workspace": "$HOME/.picoclaw/workspace",
       "restrict_to_workspace": true,
       "provider": "openrouter",
-      "model": "openrouter/free",
+      "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
       "max_tokens": 1024,
       "temperature": 0.9,
       "max_tool_iterations": 10
@@ -120,5 +120,5 @@ cat > "$HOME/.picoclaw/config.json" << EOF
 }
 EOF
 
-echo "Config OK - Modelo: openrouter/free (auto-selecao do melhor disponivel)!"
+echo "Config OK - Modelo: dolphin-mistral-24b-venice-edition:free!"
 exec ./picoclaw gateway
