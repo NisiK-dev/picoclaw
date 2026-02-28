@@ -1,0 +1,255 @@
+#!/bin/bash
+
+# Criar diretório de workspace
+mkdir -p /opt/render/.picoclaw/workspace
+
+# Criar config.json com as API keys das variáveis de ambiente
+cat > /opt/render/.picoclaw/config.json << EOF
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/opt/render/.picoclaw/workspace",
+      "restrict_to_workspace": true,
+      "model_name": "gpt4",
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "max_tool_iterations": 20
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-4o",
+      "api_key": "${OPENAI_API_KEY}",
+      "api_base": "https://api.openai.com/v1",
+      "request_timeout": 120
+    },
+    {
+      "model_name": "gpt4-mini",
+      "model": "openai/gpt-4o-mini",
+      "api_key": "${OPENAI_API_KEY}",
+      "api_base": "https://api.openai.com/v1",
+      "request_timeout": 120
+    },
+    {
+      "model_name": "claude-sonnet",
+      "model": "anthropic/claude-3-5-sonnet-20241022",
+      "api_key": "${ANTHROPIC_API_KEY}",
+      "api_base": "https://api.anthropic.com/v1",
+      "request_timeout": 120
+    },
+    {
+      "model_name": "claude-opus",
+      "model": "anthropic/claude-3-opus-20240229",
+      "api_key": "${ANTHROPIC_API_KEY}",
+      "api_base": "https://api.anthropic.com/v1",
+      "request_timeout": 300
+    },
+    {
+      "model_name": "gemini",
+      "model": "google/gemini-2.0-flash-exp:free",
+      "api_key": "${OPENROUTER_API_KEY}",
+      "api_base": "https://openrouter.ai/api/v1",
+      "request_timeout": 120
+    },
+    {
+      "model_name": "deepseek",
+      "model": "deepseek/deepseek-chat",
+      "api_key": "${DEEPSEEK_API_KEY}",
+      "api_base": "https://api.deepseek.com/v1",
+      "request_timeout": 120
+    },
+    {
+      "model_name": "groq-llama",
+      "model": "groq/llama-3.3-70b-versatile",
+      "api_key": "${GROQ_API_KEY}",
+      "api_base": "https://api.groq.com/openai/v1",
+      "request_timeout": 60
+    },
+    {
+      "model_name": "groq-mixtral",
+      "model": "groq/mixtral-8x7b-32768",
+      "api_key": "${GROQ_API_KEY}",
+      "api_base": "https://api.groq.com/openai/v1",
+      "request_timeout": 60
+    },
+    {
+      "model_name": "openrouter-claude",
+      "model": "anthropic/claude-3.5-sonnet",
+      "api_key": "${OPENROUTER_API_KEY}",
+      "api_base": "https://openrouter.ai/api/v1",
+      "request_timeout": 120
+    },
+    {
+      "model_name": "openrouter-gpt4",
+      "model": "openai/gpt-4o",
+      "api_key": "${OPENROUTER_API_KEY}",
+      "api_base": "https://openrouter.ai/api/v1",
+      "request_timeout": 120
+    }
+  ],
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "proxy": "",
+      "allow_from": ["YOUR_USER_ID"],
+      "reasoning_channel_id": ""
+    },
+    "discord": {
+      "enabled": false,
+      "token": "YOUR_DISCORD_BOT_TOKEN",
+      "allow_from": [],
+      "mention_only": false,
+      "reasoning_channel_id": ""
+    },
+    "qq": {
+      "enabled": false,
+      "app_id": "YOUR_QQ_APP_ID",
+      "app_secret": "YOUR_QQ_APP_SECRET",
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "maixcam": {
+      "enabled": false,
+      "host": "0.0.0.0",
+      "port": 18790,
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "whatsapp": {
+      "enabled": false,
+      "bridge_url": "ws://localhost:3001",
+      "use_native": false,
+      "session_store_path": "",
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "feishu": {
+      "enabled": false,
+      "app_id": "",
+      "app_secret": "",
+      "encrypt_key": "",
+      "verification_token": "",
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "dingtalk": {
+      "enabled": false,
+      "client_id": "YOUR_CLIENT_ID",
+      "client_secret": "YOUR_CLIENT_SECRET",
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "slack": {
+      "enabled": false,
+      "bot_token": "xoxb-YOUR-BOT-TOKEN",
+      "app_token": "xapp-YOUR-APP-TOKEN",
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "line": {
+      "enabled": false,
+      "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
+      "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18791,
+      "webhook_path": "/webhook/line",
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "onebot": {
+      "enabled": false,
+      "ws_url": "ws://127.0.0.1:3001",
+      "access_token": "",
+      "reconnect_interval": 5,
+      "group_trigger_prefix": [],
+      "allow_from": [],
+      "reasoning_channel_id": ""
+    },
+    "wecom": {
+      "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
+      "enabled": false,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": [],
+      "reply_timeout": 5,
+      "reasoning_channel_id": ""
+    },
+    "wecom_app": {
+      "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only. See docs/wecom-app-configuration.md",
+      "enabled": false,
+      "corp_id": "YOUR_CORP_ID",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": [],
+      "reply_timeout": 5,
+      "reasoning_channel_id": ""
+    }
+  },
+  "tools": {
+    "web": {
+      "brave": {
+        "enabled": false,
+        "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "pplx-xxx",
+        "max_results": 5
+      },
+      "proxy": ""
+    },
+    "cron": {
+      "exec_timeout_minutes": 5
+    },
+    "exec": {
+      "enable_deny_patterns": false,
+      "custom_deny_patterns": []
+    },
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "enabled": true,
+          "base_url": "https://clawhub.ai",
+          "search_path": "/api/v1/search",
+          "skills_path": "/api/v1/skills",
+          "download_path": "/api/v1/download"
+        }
+      }
+    }
+  },
+  "heartbeat": {
+    "enabled": false,
+    "interval": 30
+  },
+  "devices": {
+    "enabled": false,
+    "monitor_usb": true
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
+  }
+}
+EOF
+
+echo "Config created at:"
+ls -la /opt/render/.picoclaw/
+
+echo "Starting PicoClaw..."
+./app gateway
