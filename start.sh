@@ -1,9 +1,12 @@
 #!/bin/bash
 
+# Usar a porta do Render ou fallback para 18790
+PORT=${PORT:-18790}
+
 # Criar diretório de workspace
 mkdir -p /opt/render/.picoclaw/workspace
 
-# Criar config.json com as API keys das variáveis de ambiente
+# Criar config.json com a porta dinâmica
 cat > /opt/render/.picoclaw/config.json << EOF
 {
   "agents": {
@@ -113,7 +116,7 @@ cat > /opt/render/.picoclaw/config.json << EOF
     "maixcam": {
       "enabled": false,
       "host": "0.0.0.0",
-      "port": 18790,
+      "port": ${PORT},
       "allow_from": [],
       "reasoning_channel_id": ""
     },
@@ -243,7 +246,7 @@ cat > /opt/render/.picoclaw/config.json << EOF
   },
   "gateway": {
     "host": "0.0.0.0",
-    "port": 18790
+    "port": ${PORT}
   }
 }
 EOF
@@ -251,5 +254,5 @@ EOF
 echo "Config created at:"
 ls -la /opt/render/.picoclaw/
 
-echo "Starting PicoClaw..."
+echo "Starting PicoClaw on port ${PORT}..."
 ./app gateway
